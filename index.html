@@ -34,6 +34,78 @@
     max-width: 260px;
     z-index: 20;
   }
+  #nameDisplay {
+    margin-top: 6px;
+    font-weight: bold;
+    color: #ffd27f;
+  }
+  #infoButtons {
+    display: flex;
+    gap: 6px;
+    margin-top: 6px;
+  }
+  .infoBtn {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 4px 8px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.12);
+    color: #eee;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .infoBtn:active { background: rgba(255,255,255,0.3); }
+
+  #nameOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+  }
+  #nameOverlay.open { display: flex; }
+  #nameBox {
+    background: rgba(20,20,20,0.95);
+    border: 2px solid #7fffb0;
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: monospace;
+    color: #eee;
+    text-align: center;
+    width: min(90vw, 320px);
+  }
+  #nameTitle {
+    font-weight: bold;
+    margin-bottom: 12px;
+  }
+  #nameInput {
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-size: 15px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    border: 1px solid rgba(255,255,255,0.4);
+    background: rgba(0,0,0,0.4);
+    color: #fff;
+    margin-bottom: 12px;
+  }
+  #nameSubmitBtn {
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 2px solid #7fffb0;
+    background: rgba(127,255,176,0.15);
+    color: #7fffb0;
+    cursor: pointer;
+  }
+  #nameSubmitBtn:active { background: rgba(127,255,176,0.35); }
   #gunControls {
     position: fixed;
     bottom: 130px;
@@ -164,7 +236,23 @@
 </style>
 </head>
 <body>
-<div id="info">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car.</div>
+<div id="info">
+  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car.</span>
+  <div id="nameDisplay"></div>
+  <div id="infoButtons">
+    <button class="infoBtn" id="newGameBtn">New Game</button>
+    <button class="infoBtn" id="renameBtn">Rename</button>
+  </div>
+</div>
+
+<div id="nameOverlay">
+  <div id="nameBox">
+    <div id="nameTitle">What's your name?</div>
+    <input id="nameInput" type="text" maxlength="20" placeholder="Enter a name" autocomplete="off" />
+    <button id="nameSubmitBtn">Start</button>
+  </div>
+</div>
+
 <canvas id="game" width="800" height="600"></canvas>
 <div id="gunControls">
   <button id="reloadBtn">RELOAD (R)</button>
@@ -191,7 +279,7 @@
 <script>
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-const infoEl = document.getElementById('info');
+const infoEl = document.getElementById('infoText');
 
 // resize the actual drawing surface to fill the screen - all game code reads
 // canvas.width/canvas.height dynamically, so this "just works" for camera
@@ -272,38 +360,44 @@ const beerOnlyTree = {
 
 const breeTree = {
   startSkull: {
-    speaker: 'npc', text: "Ooh, a skull tattoo? Somebody's trying to be dangerous.",
+    speaker: 'npc', 
+    text: "Ooh, skull tattoo? You look like the kind of guy who'd choke me while you fuck me senseless.",
     options: [
       { label: 'Play it cool', next: 'skullCool' },
-      { label: '"Guilty as charged."', next: 'skullFlirt' }
+      { label: '"I\'d wreck that pussy."', next: 'skullFlirt' }
     ]
   },
-  skullCool:  { speaker: 'npc', text: "Mysterious type, huh? I like it.", next: 'orderMenu' },
-  skullFlirt: { speaker: 'npc', text: "Careful, that act might actually work on me.", next: 'orderMenu' },
+  skullCool:  { speaker: 'npc', text: "Mysterious and dangerous... my panties are already wet.", next: 'orderMenu' },
+  skullFlirt: { speaker: 'npc', text: "Fuck yes. Come find me after closing and prove it, big boy.", next: 'orderMenu' },
 
   startFlower: {
-    speaker: 'npc', text: "A flower tattoo? Sweet. I like a guy in touch with his feelings.",
+    speaker: 'npc', text: "A flower tattoo? Cute... but I bet you still fuck like an animal.",
     options: [
       { label: '"I have layers."', next: 'flowerCharm' },
-      { label: 'Shrug', next: 'flowerShrug' }
+      { label: 'Grin', next: 'flowerShrug' }
     ]
   },
-  flowerCharm: { speaker: 'npc', text: "Ha! Careful, that's kind of working on me.", next: 'orderMenu' },
-  flowerShrug: { speaker: 'npc', text: "Strong, silent, and floral. Interesting combo.", next: 'orderMenu' },
+  flowerCharm: { speaker: 'npc', text: "Mmm, confident. I like that. You can bend me over the bar later.", next: 'orderMenu' },
+  flowerShrug: { speaker: 'npc', text: "Strong silent type with a flower? Interesting. Still want you to rail me though.", next: 'orderMenu' },
 
   startNone: {
-    speaker: 'npc', text: "Hey there. Kind of a blank slate, aren't you?",
+    speaker: 'npc', text: "Hey stranger. Blank canvas, huh? I bet I could mark you up real good.",
     next: 'noneReply'
   },
   noneReply: { speaker: 'you', text: "Guess I haven't found my look yet.", next: 'orderMenu' },
 
   orderMenu: {
-    speaker: 'npc', text: "What can I get you?",
+    speaker: 'npc', text: "What can I get you, handsome? Or you just here to eye-fuck me?",
     options: [
       { label: `Beer ($${BEER_PRICE})`, next: 'checkBeer' },
       { label: `Shot ($${SHOT_PRICE})`, next: 'checkShot' },
+      { label: 'Take me to the back room', next: 'backroom' },
       { label: 'Nothing, thanks', next: 'noThanks' }
     ]
+  },
+  backroom: {
+    speaker: 'npc', text: "God yes. Lock the door behind you...", end: true,
+    effect: (p) => { console.log("Raunchy backroom scene with Bree triggered"); }
   },
   checkBeer: {
     speaker: 'npc',
@@ -323,8 +417,8 @@ const breeTree = {
     speaker: 'npc', text: "Here's your shot!", end: true,
     effect: (p) => { p.money -= SHOT_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
   },
-  tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
-  noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
+  tooExpensive: { speaker: 'npc', text: "Come back when you've got cash... or just come back for me.", end: true },
+  noThanks: { speaker: 'npc', text: "Tease. Come back soon, I'm already thinking about you.", end: true }
 };
 
 const GUN_PRICE = 250;
@@ -507,6 +601,113 @@ const jailTree = {
   start: { speaker: 'npc', text: "No visitors today. Keep your nose clean and we won't meet again.", end: true }
 };
 
+// --- Blackjack (Casino) ---
+const BLACKJACK_BETS = [10, 25, 50, 100];
+const CARD_SUITS = ['♠', '♥', '♦', '♣'];
+const CARD_RANKS = ['2','3','4','5','6','7','8','9','10','J','Q','K','A'];
+
+function makeShuffledDeck() {
+  const deck = [];
+  for (const suit of CARD_SUITS) for (const rank of CARD_RANKS) deck.push({ rank, suit });
+  for (let i = deck.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [deck[i], deck[j]] = [deck[j], deck[i]];
+  }
+  return deck;
+}
+
+function cardValue(card) {
+  if (card.rank === 'A') return 11;
+  if (card.rank === 'J' || card.rank === 'Q' || card.rank === 'K') return 10;
+  return Number(card.rank);
+}
+
+function handTotal(hand) {
+  let total = hand.reduce((sum, c) => sum + cardValue(c), 0);
+  let aces = hand.filter(c => c.rank === 'A').length;
+  while (total > 21 && aces > 0) { total -= 10; aces--; }
+  return total;
+}
+
+function isBlackjack(hand) { return hand.length === 2 && handTotal(hand) === 21; }
+
+function handString(hand, hideSecond) {
+  const cards = hideSecond ? [hand[0], null] : hand;
+  return cards.map(c => c ? `${c.rank}${c.suit}` : '??').join(' ');
+}
+
+function startBlackjackHand(p, bet) {
+  const deck = makeShuffledDeck();
+  p.bj = { deck, bet, playerHand: [deck.pop(), deck.pop()], dealerHand: [deck.pop(), deck.pop()], stood: false };
+}
+
+function dealerPlayBlackjack(p) {
+  const { deck, dealerHand } = p.bj;
+  while (handTotal(dealerHand) < 17) dealerHand.push(deck.pop());
+}
+
+function settleBlackjack(p) {
+  const { bet, playerHand, dealerHand } = p.bj;
+  const playerTotal = handTotal(playerHand);
+  const dealerTotal = handTotal(dealerHand);
+  const playerBJ = isBlackjack(playerHand);
+  const dealerBJ = isBlackjack(dealerHand);
+
+  if (playerTotal > 21) { p.bj.outcome = `Bust! You lose $${bet}.`; return; }
+  if (playerBJ && dealerBJ) { p.money += bet; p.bj.outcome = `Both blackjack - push. Bet returned.`; return; }
+  if (playerBJ) { const win = Math.floor(bet * 1.5); p.money += bet + win; p.bj.outcome = `Blackjack! You win $${win}.`; return; }
+  if (dealerBJ) { p.bj.outcome = `Dealer has blackjack. You lose $${bet}.`; return; }
+  if (dealerTotal > 21) { p.money += bet * 2; p.bj.outcome = `Dealer busts! You win $${bet}.`; return; }
+  if (playerTotal > dealerTotal) { p.money += bet * 2; p.bj.outcome = `You win $${bet}!`; return; }
+  if (playerTotal === dealerTotal) { p.money += bet; p.bj.outcome = `Push. Bet returned.`; return; }
+  p.bj.outcome = `Dealer wins. You lose $${bet}.`;
+}
+
+const blackjackTree = {
+  start: { speaker: 'npc', text: "Welcome to the tables. Blackjack, dealer's choice of stakes.", next: 'chooseBet' },
+  chooseBet: {
+    speaker: 'npc',
+    text: "How much are you betting?",
+    options: (p) => [
+      ...BLACKJACK_BETS.filter(b => p.money >= b).map(b => ({ label: `$${b}`, bet: b, next: 'deal' })),
+      { label: 'Nothing, I\'m out', next: 'bye' }
+    ]
+  },
+  deal: {
+    speaker: 'npc',
+    text: (p) => `You: ${handString(p.bj.playerHand)} (${handTotal(p.bj.playerHand)})  Dealer: ${handString(p.bj.dealerHand, true)}`,
+    effect: (p) => { p.money -= p.bj.bet; },
+    next: (p) => (isBlackjack(p.bj.playerHand) || isBlackjack(p.bj.dealerHand)) ? 'settle' : 'playing'
+  },
+  playing: {
+    speaker: 'npc',
+    text: (p) => `You: ${handString(p.bj.playerHand)} (${handTotal(p.bj.playerHand)})  Dealer: ${handString(p.bj.dealerHand, true)}`,
+    options: [
+      { label: 'Hit', next: 'hit' },
+      { label: 'Stand', next: 'dealerTurn' }
+    ]
+  },
+  hit: {
+    speaker: 'npc',
+    text: (p) => `You draw ${handString([p.bj.playerHand[p.bj.playerHand.length - 1]])}.`,
+    effect: (p) => { p.bj.playerHand.push(p.bj.deck.pop()); },
+    next: (p) => handTotal(p.bj.playerHand) > 21 ? 'settle' : 'playing'
+  },
+  dealerTurn: {
+    speaker: 'npc',
+    text: (p) => `Dealer flips over and plays: ${handString(p.bj.dealerHand)} (${handTotal(p.bj.dealerHand)})`,
+    effect: (p) => { dealerPlayBlackjack(p); },
+    next: 'settle'
+  },
+  settle: {
+    speaker: 'npc',
+    text: (p) => p.bj.outcome,
+    effect: (p) => { settleBlackjack(p); },
+    next: 'chooseBet'
+  },
+  bye: { speaker: 'npc', text: "Suit yourself. Table's open if you change your mind.", end: true }
+};
+
 const NUMBERED_STREETS = [
   { name: '1st St', y: 400 },
   { name: '2nd St', y: 900 },
@@ -571,6 +772,9 @@ const buildings = [
     {name:'Dancer Crystal', color:'#a05fe0', bikini: true, bikiniColor: '#a05fe0'},
     {name:'Bartender Vic', color:'#5f8f8f', dialogue: beerOnlyTree}
   ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }},
+  {x: 1400, y: 700, w: 150, h: 100, wallH: 80, roof: '#2a2a3a', wall: '#1f1f2c', name: 'Casino', floor: '#1a3a2a', npcs: [
+    {name:'Dealer Deuce', color:'#3a3a3a', dialogue: blackjackTree}
+  ]},
   {x: 1570, y: 680, w: 260, h: 110, wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Home', floor: '#4a3f33', npcs: []},
   {x: 2100, y: 660, w: 240, h: 120, wallH: 100, roof: '#c25f5f', wall: '#8f3f3f', name: 'Hospital', floor: '#e8e8e8', npcs: [{name:'Nurse Nancy', color:'#5f8fc2'}, {name:'Dr. Dan', color:'#eaeaea'}]},
 
@@ -728,6 +932,7 @@ const CAR_SHOWROOM_SPOT = {
 };
 
 const player = {
+  name: '',
   x: 60,
   y: 390,
   w: 22,
@@ -808,6 +1013,7 @@ let scene = 'outside';
 let currentBuilding = null;
 let nearbyNPC = null;
 let dialogueOpen = false;
+let awaitingName = false;
 let dialogueTree = null;
 let dialogueNodeKey = 'start';
 let lastFrameTime = 0;
@@ -894,6 +1100,7 @@ function selectDialogueOption(idx) {
       if (dialogueTree === carStoreTree) player.pendingCarColor = options[idx].color;
       else player.pendingMotoColor = options[idx].color;
     }
+    if (options[idx].bet) startBlackjackHand(player, options[idx].bet);
     enterNode(options[idx].next);
   }
   syncDialogueOptionsOverlay();
@@ -929,10 +1136,11 @@ function syncDialogueOptionsOverlay() {
   }
 }
 
-window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keydown', e => { if (!awaitingName) keys[e.key.toLowerCase()] = true; });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
 window.addEventListener('keydown', e => {
+  if (awaitingName) return;
   if (e.key.toLowerCase() === 'g') toggleGunEquip();
   if (e.key === ' ') {
     e.preventDefault();
@@ -944,6 +1152,7 @@ window.addEventListener('keydown', e => {
 });
 
 window.addEventListener('keydown', e => {
+  if (awaitingName) return;
   const key = e.key.toLowerCase();
 
   if (key === 'e') {
@@ -1103,13 +1312,28 @@ function drawBloodSpot(entity, camX, camY) {
   ctx.restore();
 }
 
+// distance from point (px,py) to the segment (x1,y1)-(x2,y2) - used so a
+// fast-moving bullet still registers a hit against anything it passed over
+// this frame, not just whatever is exactly at its new position. Without
+// this, a bullet covering more than 2*HIT_RADIUS in one frame (easy with a
+// dt spike from a mobile frame-rate hiccup) can tunnel straight through a
+// target without ever sampling a point close enough to it.
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+
 function resolveBulletHits(npcList, sceneName) {
   bullets = bullets.filter(b => {
     if (b.scene !== sceneName) return true;
     const hitIdx = npcList.findIndex(n => {
       if (!n) return false;
       if (n.knockedDownUntil && performance.now() < n.knockedDownUntil) return false;
-      return Math.hypot(n.x - b.x, n.y - (b.y - 20)) < HIT_RADIUS;
+      return pointToSegmentDist(n.x, n.y - 20, b.prevX, b.prevY - 20, b.x, b.y - 20) < HIT_RADIUS;
     });
     if (hitIdx === -1) return true;
     const n = npcList[hitIdx];
@@ -1119,7 +1343,7 @@ function resolveBulletHits(npcList, sceneName) {
 }
 
 function update(timestamp, dt) {
-  if (dialogueOpen) {
+  if (dialogueOpen || awaitingName) {
     return;
   }
 
@@ -1138,6 +1362,8 @@ function update(timestamp, dt) {
 
   bullets = bullets.filter(b => b.scene === scene);
   bullets.forEach(b => {
+    b.prevX = b.x;
+    b.prevY = b.y;
     b.x += b.vx * BULLET_SPEED * dt;
     b.y += b.vy * BULLET_SPEED * dt;
   });
@@ -1148,9 +1374,10 @@ function update(timestamp, dt) {
     bullets = bullets.filter(b => {
       if (b.scene !== 'outside') return true;
       const bx = b.x - PARK.x, by = b.y - PARK.y;
+      const pbx = b.prevX - PARK.x, pby = b.prevY - PARK.y;
       const hit = parkWalkers.find(w => {
         if (w.knockedDownUntil && performance.now() < w.knockedDownUntil) return false;
-        return Math.hypot(w.x - bx, w.y - (by - 20)) < HIT_RADIUS;
+        return pointToSegmentDist(w.x, w.y - 20, pbx, pby - 20, bx, by - 20) < HIT_RADIUS;
       });
       if (!hit) return true;
       applyImpact(hit, b.vx, b.vy, 3.4);
@@ -2647,6 +2874,22 @@ function drawHUD() {
   ctx.fillStyle = '#7fffb0';
   ctx.fillText(cashText, canvas.width - 22, 31);
 
+  const saveRemaining = lastSaveFlashUntil - performance.now();
+  if (saveRemaining > 0) {
+    const alpha = Math.min(1, saveRemaining / 400);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.font = 'bold 12px monospace';
+    ctx.textAlign = 'center';
+    const saveText = 'Saved';
+    const stw = ctx.measureText(saveText).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.5)';
+    ctx.fillRect(canvas.width / 2 - stw / 2 - 8, 10, stw + 16, 20);
+    ctx.fillStyle = '#7fffb0';
+    ctx.fillText(saveText, canvas.width / 2, 24);
+    ctx.restore();
+  }
+
   if (player.hasGun) {
     const flashEmpty = performance.now() < lastShotBlockedFlashUntil;
     const ammoText = `${player.ammoInMag}/${MAG_SIZE}  •  ${player.spareMags} mag${player.spareMags === 1 ? '' : 's'}`;
@@ -2782,6 +3025,79 @@ bindTapButton('talkBtn', pressInteract);
 bindTapButton('gunBtn', toggleGunEquip);
 bindTapButton('motoBtn', toggleMotorcycle);
 bindTapButton('carBtn', toggleCar);
+
+const SAVE_KEY = 'topdownWalkerSave';
+let lastSaveFlashUntil = 0;
+
+function saveGame() {
+  const data = {
+    player,
+    scene,
+    // index into `buildings`, not name - two buildings are both named "House"
+    currentBuildingIndex: currentBuilding ? buildings.indexOf(currentBuilding) : -1,
+    motorcycleParked,
+    carParked
+  };
+  localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  lastSaveFlashUntil = performance.now() + 1500;
+}
+
+document.getElementById('newGameBtn').addEventListener('click', () => {
+  if (confirm('Start a new game? This erases your current save.')) {
+    localStorage.removeItem(SAVE_KEY);
+    location.reload();
+  }
+});
+
+function loadGame() {
+  const raw = localStorage.getItem(SAVE_KEY);
+  if (!raw) return;
+  try {
+    const data = JSON.parse(raw);
+    Object.assign(player, data.player);
+    scene = data.scene === 'interior' ? 'interior' : 'outside';
+    currentBuilding = (data.currentBuildingIndex >= 0 && buildings[data.currentBuildingIndex]) ? buildings[data.currentBuildingIndex] : null;
+    motorcycleParked = data.motorcycleParked || null;
+    carParked = data.carParked || null;
+  } catch (e) {
+    console.error('Failed to load save', e);
+  }
+}
+
+function updateNameDisplay() {
+  document.getElementById('nameDisplay').textContent = player.name ? `Playing as: ${player.name}` : '';
+}
+
+function openNameOverlay(prefill) {
+  awaitingName = true;
+  const overlay = document.getElementById('nameOverlay');
+  const input = document.getElementById('nameInput');
+  overlay.classList.add('open');
+  input.value = prefill || '';
+  input.focus();
+}
+
+function submitName() {
+  const input = document.getElementById('nameInput');
+  player.name = input.value.trim().slice(0, 20) || 'Drifter';
+  document.getElementById('nameOverlay').classList.remove('open');
+  awaitingName = false;
+  updateNameDisplay();
+  saveGame();
+}
+
+document.getElementById('nameSubmitBtn').addEventListener('click', submitName);
+document.getElementById('nameInput').addEventListener('keydown', e => {
+  e.stopPropagation();
+  if (e.key === 'Enter') submitName();
+});
+document.getElementById('renameBtn').addEventListener('click', () => openNameOverlay(player.name));
+
+loadGame();
+if (!player.name) openNameOverlay('');
+else updateNameDisplay();
+setInterval(saveGame, 5000);
+window.addEventListener('beforeunload', saveGame);
 
 requestAnimationFrame(loop);
 </script>
