@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #2b2b2b;
+    overflow: hidden;
+    height: 100%;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: #4a7c3c;
+    image-rendering: pixelated;
+  }
+  #info {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: #eee;
+    font-family: monospace;
+    font-size: 14px;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 10px;
+    border-radius: 6px;
+    max-width: 280px;
+  }
+</style>
+</head>
+<body>
+<div id="info">WASD / Arrows to move, hold Shift to run. Walk into a building's door to go inside. Walk to the door at the bottom to leave.</div>
+<canvas id="game" width="800" height="600"></canvas>
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const infoEl = document.getElementById('info');
+
+const WORLD_W = 3100;
+const WORLD_H = 2200;
+const ROOM_W = 500;
+const ROOM_H = 380;
+const WALL_THICK = 24;
+
+// default small-talk tree used by any NPC without a custom conversation
+const helloTree = {
+  start:  { speaker: 'npc', text: 'Hello!', next: 'reply' },
+  reply:  { speaker: 'you', text: 'Hello!', end: true }
+};
+
+// Ivy's tattoo conversation
+const ivyTree = {
+  start: {
+    speaker: 'npc', text: 'Would you like a tattoo?',
+    options: [
+      { label: 'Yes', next: 'choose' },
+      { label: 'No', next: 'decline' }
+    ]
+  },
+  choose: {
+    speaker: 'npc', text: 'Would you like a skull or a flower?',
+    options: [
+      { label: 'Skull', next: 'skullGood' },
+      { label: 'Flower', next: 'flowerGood' }
+    ]
+  },
+  skullGood:  { speaker: 'npc', text: 'Good choice, a skull!', next: 'skullGive' },
+  skullGive:  { speaker: 'npc', text: "Here's your skull!", end: true, effect: (p) => { p.traits.tattoo = 'skull'; } },
+  flowerGood: { speaker: 'npc', text: 'Good choice, a flower!', next: 'flowerGive' },
+  flowerGive: { speaker: 'npc', text: "Here's your flower!", end: true, effect: (p) => { p.traits.tattoo = 'flower'; } },
+  decline:    { speaker: 'npc', text: 'Ok, let me know if you change your mind. See you later!', end: true, effect: (p) => { p.traits.tattoo = 'none'; p.traits.wholesomePath = true; } }
+};
+
+// Bree reacts differently depending on the tattoo you got from Ivy
+const breeTree = {
+  startSkull: {
+    speaker: 'npc', text: "Ooh, a skull tattoo? Somebody's trying to be dangerous.",
+    options: [
+      { label: 'Play it cool', next: 'skullCool' },
+      { label: '"Guilty as charged."', next: 'skullFlirt' }
+    ]
+  },
+  skullCool:  { speaker: 'npc', text: "Mysterious type, huh? I like it.", end: true },
+  skullFlirt: { speaker: 'npc', text: "Careful, that act might actually work on me.", end: true },
+
+  startFlower: {
+    speaker: 'npc', text: "A flower tattoo? Sweet. I like a guy in touch with his feelings.",
+    options: [
+      { label: '"I have layers."', next: 'flowerCharm' },
+      { label: 'Shrug', next: 'flowerShrug' }
+    ]
+  },
+  flowerCharm: { speaker: 'npc', text: "Ha! Careful, that's kind of working on me.", end: true },
+  flowerShrug: { speaker: 'npc', text: "Strong, silent, and floral. Interesting combo.", end: true },
+
+  startNone: {
+    speaker: 'npc', text: "Hey there. Kind of a blank slate, aren't you?",
+    next: 'noneReply'
+  },
+  noneReply: { speaker: 'you', text: "Guess I haven't found my look yet.", end: true }
+};
+
+// Town layout: a real city grid. Numbered streets (1st, 2nd, 3rd) run
+// east-west; named tree streets (Oak, Pine, Elm, Maple) run north-south.
+// Buildings sit in the blocks just north of whichever numbered street
+// serves them, doors facing down onto the sidewalk/road.
+const NUMBERED_STREETS = [
+  { name: '1st St', y: 400 },
+  { name: '2nd St', y: 900 },
+  { name: '3rd St', y: 1900 }
+];
+const NAMED_STREETS = [
+  { name: 'Oak St',   x: 400 },
+  { name: 'Pine St',  x: 900 },
+  { name: 'Elm St',   x: 1900 },
+  { name: 'Maple St', x: 2400 }
+];
+const ROAD_W = 100; // width of every street, both directions
+
+// the walkable sidewalk network - citizens only ever travel along these
+// lines, and only cross from one to another at a named-street crossing
+const H_LANES = [];
+NUMBERED_STREETS.forEach(s => { H_LANES.push(s.y - 10); H_LANES.push(s.y + ROAD_W + 10); });
+const V_LANES = [];
+NAMED_STREETS.forEach(s => { V_LANES.push(s.x - 10); V_LANES.push(s.x + ROAD_W + 10); });
+
+function nearestLane(value, lanes) {
+  return lanes.reduce((best, l) => Math.abs(l - value) < Math.abs(best - value) ? l : best, lanes[0]);
+}
+
+// builds a simple L/Z-shaped walking path along the sidewalk grid: walk the
+// current lane to the nearest cross-street, turn, walk to the target lane,
+// then walk to the final point - so corners only happen at intersections
+function buildSidewalkPath(sx, sy, ex, ey) {
+  if (Math.abs(sy - ey) < 2) return [{ x: ex, y: ey }]; // already on the target's lane
+  const crossX = nearestLane((sx + ex) / 2, V_LANES);
+  return [
+    { x: crossX, y: sy },
+    { x: crossX, y: ey },
+    { x: ex, y: ey }
+  ];
+}
+
+function randomSidewalkPoint() {
+  const lane = H_LANES[Math.floor(Math.random() * H_LANES.length)];
+  return { x: 100 + Math.random() * (WORLD_W - 200), y: lane };
+}
+
+const buildings = [
+  // --- 1st St: downtown shops, one or two per block ---
+  {x: 20, y: 220, w: 180, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tattoo Parlor', floor: '#3a2a2a', npcs: [{name:'Inkwell Ivy', color:'#c25fae', dialogue: ivyTree}]},
+  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
+  {x: 530, y: 170, w: 160, h: 110, wallH: 100,roof: '#4a6a8a', wall: '#37506a', name: 'Pharmacy', floor: '#2f3a44', npcs: [{name:'Pharmacist Pat', color:'#8fc25f'}]},
+  {x: 2780, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f'}]},
+  {x: 1090, y: 190, w: 220, h: 100, wallH: 90, roof: '#8a7a58', wall: '#6a5c40', name: 'Grocery Store', floor: '#4a4433', npcs: [{name:'Stan the Stock Boy', color:'#5fa8c2'}, {name:'Cart Kid Cassie', color:'#c2a05f'}]},
+  {x: 1580, y: 180, w: 240, h: 110,wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Restaurant', floor: '#3a2f22', npcs: [{name:'Waiter Waldo', color:'#c2c25f'}, {name:'Chef Chuck', color:'#c25f5f'}]},
+  {x: 2540, y: 200, w: 220, h: 100, wallH: 80, roof: '#8a7a58', wall: '#6a5c40', name: 'Gun Store', floor: '#3a3a3a', npcs: [{name:'Gunny Sue', color:'#8f8f5f'}]},
+
+  // --- 2nd St: nightlife district, clustered together, Home right next door ---
+  {x: 570, y: 700, w: 260, h: 100, wallH: 80, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tavern', floor: '#3a2a1e', npcs: [{name:'Old Man Gus', color:'#a0a0a0'}, {name:'Regular Rita', color:'#c25f5f'}]},
+  {x: 1030, y: 720, w: 200, h: 90,  wallH: 70, roof: '#8a7a58', wall: '#6a5c40', name: 'Bar', floor: '#332a22', npcs: [{
+    name:'Bartender Bree', color:'#5f8fc2', dialogue: breeTree,
+    getStartKey: (p) => p.traits.tattoo === 'skull' ? 'startSkull' : p.traits.tattoo === 'flower' ? 'startFlower' : 'startNone'
+  }]},
+  {x: 1240, y: 720, w: 130, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Strip Club', floor: '#2a1a2a', npcs: [{name:'Bouncer Bruno', color:'#5f5fc2'}]},
+  {x: 1570, y: 680, w: 260, h: 110, wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Home', floor: '#4a3f33', npcs: []},
+
+  // --- 3rd St: vehicle row clustered together, Mega Lo Mart way out past a gap ---
+  {x: 90, y: 1700, w: 220, h: 100, wallH: 80, roof: '#4a8a5a', wall: '#376a44', name: 'Used Motorcycles', floor: '#3a3025', npcs: [{name:'Slick Sal', color:'#c2905f'}]},
+  {x: 580, y: 1680, w: 240, h: 110, wallH: 90, roof: '#6a4a8a', wall: '#503770', name: 'Used Cars', floor: '#2f3a2f', npcs: [{name:'Lemon Larry', color:'#5fc290'}]},
+  {x: 2040, y: 1700, w: 200, h: 100, wallH: 80, roof: '#8a7a58', wall: '#6a5c40', name: 'Mechanic Shop', floor: '#2a2a2a', npcs: [{name:'Wrench Wendy', color:'#909090'}]},
+  {x: 2560, y: 1630, w: 280, h: 150, wallH: 100, roof: '#c2793a', wall: '#8f5a29', name: 'Mega Lo Mart', floor: '#33394a', npcs: [{name:'Greeter Gary', color:'#5f90c2'}, {name:'Cashier Carla', color:'#c25f8f'}]},
+
+  // --- residential filler: houses and apartments tucked into the leftover blocks ---
+  {x: 710, y: 220, w: 150, h: 90, wallH: 70, roof: '#6a8a9a', wall: '#4f6b78', name: 'Apartments', floor: '#3a3530', npcs: [{name:'Neighbor Nadia', color:'#c2905f'}]},
+  {x: 40, y: 720, w: 150, h: 90, wallH: 70, roof: '#c2a25f', wall: '#8f7540', name: 'House', floor: '#3a3025', npcs: [{name:'Neighbor Norm', color:'#5f8fc2'}]},
+  {x: 210, y: 720, w: 150, h: 90, wallH: 70, roof: '#8ac25f', wall: '#5f8f3a', name: 'House', floor: '#3a3a25', npcs: [{name:'Neighbor Nora', color:'#c25f8f'}]},
+  {x: 2540, y: 690, w: 200, h: 100, wallH: 90, roof: '#9a6a8a', wall: '#704f70', name: 'Riverside Apartments', floor: '#332f3a', npcs: [{name:'Tenant Tim', color:'#8fc25f'}]},
+  {x: 2760, y: 690, w: 200, h: 100, wallH: 90, roof: '#c27a5f', wall: '#8f5540', name: 'Sunset Apartments', floor: '#3a2f2a', npcs: [{name:'Tenant Tia', color:'#5fc2a0'}]}
+];
+
+// give every static NPC a look, without having to hand-write it for each one
+buildings.forEach(b => b.npcs.forEach(n => {
+  if (!n.gender) Object.assign(n, randomPersonStyle());
+}));
+
+// Central Park: fills the block between Elm St and Maple St, sandwiched
+// between 2nd St and 3rd St. All coordinates below are relative to PARK.x/y.
+// Central Park - now a full block of its own in the middle of the city,
+// with 1st/2nd St and Oak/Pine St on one side and 3rd St and Elm/Maple St
+// pushed out further to make room for it.
+const PARK = { x: 1090, y: 1090, w: 720, h: 720 };
+const PARK_POND = { x: 250, y: 285, w: 220, h: 150 };
+const PARK_PATH_BAND = 20; // same width as the street sidewalks
+const PARK_TREES = [
+  { x: 60, y: 300 }, { x: 60, y: 420 }, { x: 660, y: 300 }, { x: 660, y: 420 },
+  { x: 300, y: 60 }, { x: 420, y: 60 }, { x: 300, y: 660 }, { x: 420, y: 660 },
+  { x: 150, y: 200 }, { x: 570, y: 200 }, { x: 150, y: 520 }, { x: 570, y: 520 }
+];
+const PARK_BUSHES = [
+  { x: 180, y: 120 }, { x: 540, y: 120 }, { x: 180, y: 600 }, { x: 540, y: 600 },
+  { x: 120, y: 300 }, { x: 120, y: 420 }, { x: 600, y: 300 }, { x: 600, y: 420 },
+  { x: 300, y: 150 }, { x: 420, y: 150 }
+];
+
+// people out enjoying the park - wander freely rather than patrolling a line
+const parkWalkers = [
+  { name: 'Park-goer Priya', x: 400, y: 400, targetX: 400, targetY: 400, nextDecision: 0, speed: 0.6, color: '#c25f8f' },
+  { name: 'Stroller Sam',    x: 200, y: 550, targetX: 200, targetY: 550, nextDecision: 0, speed: 0.55, color: '#5f8fc2' },
+  { name: 'Frisbee Fran',    x: 550, y: 150, targetX: 550, targetY: 150, nextDecision: 0, speed: 0.7, color: '#8fc25f' },
+  { name: 'Reader Ray',      x: 600, y: 620, targetX: 600, targetY: 620, nextDecision: 0, speed: 0.45, color: '#c2905f' }
+].map(w => ({ ...w, ...randomPersonStyle() }));
+
+// obstacles the player can't walk through: the pond, plus a small trunk-sized
+// box at the base of each tree
+const parkObstacles = [
+  { x: PARK.x + PARK_POND.x, y: PARK.y + PARK_POND.y, w: PARK_POND.w, h: PARK_POND.h },
+  ...PARK_TREES.map(t => ({ x: PARK.x + t.x - 6, y: PARK.y + t.y - 6, w: 12, h: 12 }))
+];
+
+// citizens roam the whole city rather than pacing one sidewalk block.
+// each has a "home" spot they drift back to sometimes, so you can go
+// find them again, and each occasionally ducks into a store for a
+// while - walk in after them and you'll find them inside.
+const citizens = [
+  { name: 'Jogger Jamie',      homeX: 200,  homeY: 390, x: 200,  y: 390, color: '#c2905f' },
+  { name: 'Commuter Cody',     homeX: 600,  homeY: 390, x: 600,  y: 390, color: '#5f8fc2' },
+  { name: 'Dog Walker Dee',    homeX: 800,  homeY: 390, x: 800,  y: 390, color: '#c25f8f' },
+  { name: 'Shopper Shane',     homeX: 1200, homeY: 390, x: 1200, y: 390, color: '#8fc25f' },
+  { name: 'Tourist Tara',      homeX: 1700, homeY: 390, x: 1700, y: 390, color: '#c2c25f' },
+  { name: 'Errand Eddie',      homeX: 2700, homeY: 390, x: 2700, y: 390, color: '#905fc2' },
+
+  { name: 'Regular Rick',      homeX: 700,  homeY: 890, x: 700,  y: 890, color: '#c25f5f' },
+  { name: 'Night Owl Nina',    homeX: 1200, homeY: 890, x: 1200, y: 890, color: '#5fc2a0' },
+  { name: 'Cabbie Carl',       homeX: 1700, homeY: 890, x: 1700, y: 890, color: '#c2905f' },
+
+  { name: 'Grease Monkey Gil', homeX: 200,  homeY: 1890, x: 200,  y: 1890, color: '#5f8fc2' },
+  { name: 'Parts Runner Pete', homeX: 700,  homeY: 1890, x: 700,  y: 1890, color: '#c2a05f' },
+  { name: 'Test Driver Toni',  homeX: 2130, homeY: 1890, x: 2130, y: 1890, color: '#8f8f5f' },
+  { name: 'Cart Pusher Cam',   homeX: 2700, homeY: 1890, x: 2700, y: 1890, color: '#5fc290' },
+].map(c => ({
+  ...c,
+  ...randomPersonStyle(),
+  facing: 'down',
+  path: null, pathIndex: 0,
+  speed: 0.45 + Math.random() * 0.2,
+  nextDecision: 0,
+  state: 'wander',       // 'wander' | 'inside'
+  enterTarget: null,     // building they're walking toward to enter
+  insideBuilding: null,  // building they're currently inside
+  insideUntil: 0
+}));
+
+// door trigger zone in front of each building, at the base of the wall
+buildings.forEach(b => {
+  b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallH - 10, w: 36, h: 20 };
+  // fixed room-relative NPC start positions
+  b.npcs.forEach((n, i) => {
+    n.x = 80 + (i % 3) * 140;
+    n.y = 100 + Math.floor(i / 3) * 80;
+    n.targetX = n.x;
+    n.targetY = n.y;
+    n.nextDecision = 0;
+  });
+});
+
+const player = {
+  x: 60,
+  y: 390,
+  w: 22,
+  h: 16,
+  speed: 0.6,
+  runSpeed: 2.4,
+  facing: 'down',
+  gender: 'm',
+  hairColor: '#3a2a1a',
+  traits: {} // e.g. traits.tattoo = 'skull' | 'flower'
+};
+
+let scene = 'outside'; // 'outside' | 'interior'
+let currentBuilding = null;
+let nearbyNPC = null;
+let dialogueOpen = false;
+let dialogueTree = null;
+let dialogueNodeKey = 'start';
+
+const keys = {};
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+window.addEventListener('keydown', e => {
+  const key = e.key.toLowerCase();
+
+  if (key === 'e') {
+    if (dialogueOpen) {
+      const node = dialogueTree[dialogueNodeKey];
+      if (node.options) return; // this line requires picking a numbered choice, not E
+      if (node.end) {
+        dialogueOpen = false;
+      } else if (node.next) {
+        enterNode(node.next);
+      }
+    } else if (nearbyNPC) {
+      dialogueTree = nearbyNPC.dialogue || helloTree;
+      const startKey = nearbyNPC.getStartKey ? nearbyNPC.getStartKey(player) : 'start';
+      dialogueOpen = true;
+      enterNode(startKey);
+    }
+    return;
+  }
+
+  // number keys pick a dialogue option when one is showing
+  if (dialogueOpen && /^[1-9]$/.test(key)) {
+    const node = dialogueTree[dialogueNodeKey];
+    if (node.options) {
+      const idx = parseInt(key, 10) - 1;
+      if (idx >= 0 && idx < node.options.length) {
+        enterNode(node.options[idx].next);
+      }
+    }
+  }
+});
+
+function enterNode(key) {
+  dialogueNodeKey = key;
+  const node = dialogueTree[key];
+  if (node && node.effect) node.effect(player);
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+function enterBuilding(b) {
+  scene = 'interior';
+  currentBuilding = b;
+  player.x = ROOM_W / 2 - player.w / 2;
+  player.y = ROOM_H - 110;
+  player.facing = 'down';
+  infoEl.textContent = `Inside ${b.name}. Walk down to the door to leave.`;
+}
+
+function exitBuilding() {
+  const b = currentBuilding;
+  player.x = b.doorZone.x + b.doorZone.w / 2 - player.w / 2;
+  player.y = b.doorZone.y + b.doorZone.h + 12;
+  player.facing = 'down';
+  scene = 'outside';
+  currentBuilding = null;
+  nearbyNPC = null;
+  dialogueOpen = false;
+  dialogueTree = null;
+  dialogueNodeKey = 'start';
+  infoEl.textContent = `WASD / Arrows to move. Walk into a building's door to go inside.`;
+}
+
+function tryMoveOutside(dx, dy) {
+  let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
+  next.x = Math.max(0, Math.min(WORLD_W - player.w, next.x));
+  let blocked = buildings.some(b => {
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  if (!blocked) player.x = next.x;
+
+  next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
+  next.y = Math.max(0, Math.min(WORLD_H - player.h, next.y));
+  blocked = buildings.some(b => {
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  if (!blocked) player.y = next.y;
+}
+
+function tryMoveInterior(dx, dy) {
+  let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
+  next.x = Math.max(WALL_THICK, Math.min(ROOM_W - WALL_THICK - player.w, next.x));
+  player.x = next.x;
+
+  next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
+  next.y = Math.max(WALL_THICK, Math.min(ROOM_H - WALL_THICK - player.h, next.y));
+  player.y = next.y;
+}
+
+function update(timestamp) {
+  if (dialogueOpen) {
+    // conversation is open - freeze everything else in place
+    return;
+  }
+
+  // citizens who are visiting a store leave once their timer is up, wherever the player is
+  citizens.forEach(c => {
+    if (c.state === 'inside' && timestamp > c.insideUntil) {
+      const b = c.insideBuilding;
+      b.npcs = b.npcs.filter(n => !(n.isCitizen && n.citizenRef === c));
+      c.state = 'wander';
+      c.insideBuilding = null;
+      c.x = b.doorZone.x + b.doorZone.w / 2;
+      c.y = b.doorZone.y + b.doorZone.h; // exactly on the sidewalk lane, not out in the road
+      c.path = null;
+      c.nextDecision = 0;
+    }
+  });
+
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup']) dy -= 1;
+  if (keys['s'] || keys['arrowdown']) dy += 1;
+  if (keys['a'] || keys['arrowleft']) dx -= 1;
+  if (keys['d'] || keys['arrowright']) dx += 1;
+
+  if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+  if (dx !== 0 || dy !== 0) {
+    if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
+    else player.facing = dy > 0 ? 'down' : 'up';
+  }
+
+  const moveSpeed = keys['shift'] ? player.runSpeed : player.speed;
+
+  if (scene === 'outside') {
+    tryMoveOutside(dx * moveSpeed, dy * moveSpeed);
+
+    // check door triggers - must be facing up (walking toward the building) to enter
+    const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+    for (const b of buildings) {
+      if (player.facing === 'up' && rectsOverlap(playerRect, b.doorZone)) {
+        enterBuilding(b);
+        break;
+      }
+    }
+
+    // check for a nearby citizen to talk to, and pause them if close
+    nearbyNPC = null;
+    const ppx = player.x + player.w / 2;
+    const ppy = player.y + player.h / 2;
+    citizens.forEach(c => {
+      if (c.state === 'inside') return; // currently inside a building - see that building's npc list instead
+
+      const dist = Math.hypot(c.x - ppx, c.y - ppy);
+      const isNear = dist < 42;
+      if (isNear) { nearbyNPC = c; return; } // pause wandering while the player is close by
+
+      if (timestamp > c.nextDecision) {
+        const roll = Math.random();
+        let destX, destY;
+        if (roll < 0.2) {
+          // head for a random building's door
+          const b = buildings[Math.floor(Math.random() * buildings.length)];
+          destX = b.doorZone.x + b.doorZone.w / 2;
+          destY = b.doorZone.y + b.doorZone.h;
+          c.enterTarget = b;
+        } else if (roll < 0.45) {
+          // head back home for a while
+          destX = c.homeX;
+          destY = c.homeY;
+          c.enterTarget = null;
+        } else {
+          // wander somewhere else in the city, staying on the sidewalk network
+          const p = randomSidewalkPoint();
+          destX = p.x;
+          destY = p.y;
+          c.enterTarget = null;
+        }
+        c.path = buildSidewalkPath(c.x, c.y, destX, destY);
+        c.pathIndex = 0;
+        c.nextDecision = timestamp + 5000 + Math.random() * 6000;
+      }
+
+      if (c.path && c.pathIndex < c.path.length) {
+        const wp = c.path[c.pathIndex];
+        const cdx = wp.x - c.x, cdy = wp.y - c.y;
+        const cdist = Math.hypot(cdx, cdy);
+        if (cdist > 4) {
+          if (Math.abs(cdx) > Math.abs(cdy)) c.facing = cdx > 0 ? 'right' : 'left';
+          else c.facing = cdy > 0 ? 'down' : 'up';
+          c.x += (cdx / cdist) * c.speed;
+          c.y += (cdy / cdist) * c.speed;
+        } else {
+          c.pathIndex++;
+          if (c.pathIndex >= c.path.length) {
+            c.path = null;
+            if (c.enterTarget) {
+              // arrived at a store's door - go inside for a while
+              const b = c.enterTarget;
+              c.state = 'inside';
+              c.insideBuilding = b;
+              c.insideUntil = timestamp + 8000 + Math.random() * 14000;
+              b.npcs.push({
+                name: c.name, color: c.color, isCitizen: true, citizenRef: c,
+                gender: c.gender, hairColor: c.hairColor, skirt: c.skirt, skirtColor: c.skirtColor,
+                x: ROOM_W / 2, y: ROOM_H - 140, targetX: ROOM_W / 2, targetY: ROOM_H - 140, nextDecision: 0
+              });
+              c.enterTarget = null;
+            } else {
+              c.nextDecision = 0; // arrived somewhere (home or a wander point) - decide again next tick
+            }
+          }
+        }
+      }
+    });
+
+    // people wandering freely inside the park
+    parkWalkers.forEach(w => {
+      const wx = PARK.x + w.x, wy = PARK.y + w.y;
+      const dist = Math.hypot(wx - ppx, wy - ppy);
+      const isNear = dist < 42;
+      if (isNear) { nearbyNPC = w; return; } // pause wandering while the player is close by
+
+      if (timestamp > w.nextDecision) {
+        let tx, ty;
+        do {
+          tx = 40 + Math.random() * (PARK.w - 80);
+          ty = 40 + Math.random() * (PARK.h - 80);
+        } while (
+          tx > PARK_POND.x - 20 && tx < PARK_POND.x + PARK_POND.w + 20 &&
+          ty > PARK_POND.y - 20 && ty < PARK_POND.y + PARK_POND.h + 20
+        );
+        w.targetX = tx;
+        w.targetY = ty;
+        w.nextDecision = timestamp + 2000 + Math.random() * 3000;
+      }
+      const wdx = w.targetX - w.x, wdy = w.targetY - w.y;
+      const wdist = Math.hypot(wdx, wdy);
+      if (wdist > 2) {
+        const margin = 12;
+        const pondBlocks = (px, py) =>
+          px > PARK_POND.x - margin && px < PARK_POND.x + PARK_POND.w + margin &&
+          py > PARK_POND.y - margin && py < PARK_POND.y + PARK_POND.h + margin;
+
+        const stepX = (wdx / wdist) * w.speed;
+        const stepY = (wdy / wdist) * w.speed;
+
+        const nx = w.x + stepX;
+        if (!pondBlocks(nx, w.y)) w.x = nx;
+
+        const ny = w.y + stepY;
+        if (!pondBlocks(w.x, ny)) w.y = ny;
+      }
+    });
+  } else if (scene === 'interior') {
+    tryMoveInterior(dx * moveSpeed, dy * moveSpeed);
+
+    // exit zone at the bottom center of the room
+    const exitZone = { x: ROOM_W/2 - 30, y: ROOM_H - WALL_THICK - 14, w: 60, h: 20 };
+    const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+    if (player.facing === 'down' && rectsOverlap(playerRect, exitZone)) {
+      exitBuilding();
+      return;
+    }
+
+    // wander NPCs, and check if the player is close enough to talk
+    nearbyNPC = null;
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    currentBuilding.npcs.forEach(n => {
+      const npcDist = Math.hypot(n.x - px, n.y - py);
+      const isNear = npcDist < 42;
+      if (isNear) nearbyNPC = n;
+
+      if (isNear) return; // pause wandering while the player is close by
+
+      if (timestamp > n.nextDecision) {
+        n.targetX = WALL_THICK + 20 + Math.random() * (ROOM_W - WALL_THICK*2 - 40);
+        n.targetY = WALL_THICK + 20 + Math.random() * (ROOM_H - WALL_THICK*2 - 60);
+        n.nextDecision = timestamp + 1500 + Math.random() * 2500;
+      }
+      const ndx = n.targetX - n.x;
+      const ndy = n.targetY - n.y;
+      const dist = Math.hypot(ndx, ndy);
+      if (dist > 2) {
+        n.x += (ndx / dist) * 0.65;
+        n.y += (ndy / dist) * 0.65;
+      }
+    });
+  }
+}
+
+function drawDude(cx, cy, color, label, opts) {
+  opts = opts || {};
+  const facing = opts.facing || 'down';
+  const gender = opts.gender || 'm';
+  const hairColor = opts.hairColor || '#3a2a1a';
+  const scale = opts.kid ? 0.62 : 1;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.scale(scale, scale);
+
+  // shadow
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // legs - longer than before
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(-7, -12, 5, 13);
+  ctx.fillRect(2, -12, 5, 13);
+
+  // arms
+  ctx.fillStyle = color || '#3a6fd8';
+  ctx.fillRect(-13, -29, 4, 15);
+  ctx.fillRect(9, -29, 4, 15);
+
+  // torso - tapered waist and a subtle chest curve for a female silhouette,
+  // straight rectangle for male
+  ctx.fillStyle = color || '#3a6fd8';
+  if (gender === 'f') {
+    ctx.beginPath();
+    ctx.moveTo(-9, -31);
+    ctx.lineTo(9, -31);
+    ctx.lineTo(7, -21);
+    ctx.lineTo(8, -10);
+    ctx.lineTo(-8, -10);
+    ctx.lineTo(-7, -21);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-4, -25, 3, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, -25, 3, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillRect(-9, -31, 18, 21);
+  }
+
+  // skirt, flared over the lower torso and upper legs, worn by some women
+  if (opts.skirt) {
+    ctx.fillStyle = opts.skirtColor || '#c25f8f';
+    ctx.beginPath();
+    ctx.moveTo(-9, -19);
+    ctx.lineTo(9, -19);
+    ctx.lineTo(14, -4);
+    ctx.lineTo(-14, -4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // head
+  ctx.fillStyle = '#f0c090';
+  ctx.beginPath();
+  ctx.arc(0, -39, 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // hair - longer/framing for female, short cap for male
+  ctx.fillStyle = hairColor;
+  ctx.beginPath();
+  ctx.arc(0, -41, 10.5, Math.PI, Math.PI * 2);
+  ctx.fill();
+  if (gender === 'f') {
+    ctx.fillRect(-11, -41, 5, 19);
+    ctx.fillRect(6, -41, 5, 19);
+  }
+
+  // eyes, positioned according to which way they're facing
+  if (facing !== 'up') {
+    let ex = 0;
+    if (facing === 'left') ex = -3.5;
+    else if (facing === 'right') ex = 3.5;
+    const ey = -38;
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex - 3, ey, 2.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + 3, ey, 2.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(ex - 3 + ex * 0.15, ey, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + 3 + ex * 0.15, ey, 1, 0, Math.PI * 2); ctx.fill();
+  }
+
+  if (label) {
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(-tw/2 - 4, -66, tw + 8, 14);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, 0, -56);
+  }
+
+  ctx.restore();
+}
+
+function randomPersonStyle() {
+  const hairColors = ['#2a1e14', '#4a3020', '#6b4a2a', '#1a1a1a', '#8a6a3a', '#c2a05f'];
+  const skirtColors = ['#c25f8f', '#8f5fc2', '#c2905f', '#5f8fc2', '#c25f5f', '#5fc2a0'];
+  const gender = Math.random() < 0.5 ? 'f' : 'm';
+  return {
+    gender,
+    hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
+    skirt: gender === 'f' && Math.random() < 0.5,
+    skirtColor: skirtColors[Math.floor(Math.random() * skirtColors.length)]
+  };
+}
+
+function drawBuildingExterior(b, camX, camY) {
+  const sx = b.x - camX;
+  const sy = b.y - camY;
+
+  ctx.fillStyle = b.wall;
+  ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx, sy, b.w, b.h + b.wallH);
+
+  ctx.fillStyle = 'rgba(255, 240, 180, 0.5)';
+  const winW = 14, winH = 18;
+  for (let wx = sx + 16; wx < sx + b.w - 16; wx += winW + 20) {
+    ctx.fillRect(wx, sy + b.h + 14, winW, winH);
+  }
+
+  // door, drawn as a visible gap in the wall
+  const dz = b.doorZone;
+  ctx.fillStyle = '#2a1f18';
+  ctx.fillRect(dz.x - camX, sy + b.h, dz.w, b.wallH);
+
+  ctx.fillStyle = b.roof;
+  ctx.fillRect(sx, sy, b.w, b.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.strokeRect(sx, sy, b.w, b.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(sx, sy, b.w, 8);
+
+  if (b.name) {
+    const labelX = sx + b.w / 2;
+    const labelY = sy - 10;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    const textW = ctx.measureText(b.name).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(labelX - textW/2 - 6, labelY - 14, textW + 12, 18);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(b.name, labelX, labelY);
+  }
+}
+
+function freeSegments(totalLen, zones) {
+  // returns the gaps in [0,totalLen] that DON'T fall inside any given zone
+  const sorted = zones.slice().sort((a, b) => a.start - b.start);
+  const segments = [];
+  let cursor = 0;
+  sorted.forEach(z => {
+    if (z.start > cursor) segments.push({ start: cursor, end: z.start });
+    cursor = Math.max(cursor, z.end);
+  });
+  if (cursor < totalLen) segments.push({ start: cursor, end: totalLen });
+  return segments;
+}
+
+function drawRoads(camX, camY) {
+  const SIDEWALK_W = 20;
+  const asphalt = '#3a3a3a';
+  const sidewalk = '#9a9a92';
+  const centerline = '#d4c24a';
+
+  // the zone each street's full paved width (road + its own sidewalks) occupies -
+  // sidewalks and centerlines on the OTHER axis skip these zones entirely
+  const namedZones = NAMED_STREETS.map(v => ({ start: v.x - SIDEWALK_W, end: v.x + ROAD_W + SIDEWALK_W }));
+  const numberedZones = NUMBERED_STREETS.map(h => ({ start: h.y - SIDEWALK_W, end: h.y + ROAD_W + SIDEWALK_W }));
+
+  // roads themselves span the full map - they're meant to connect through intersections
+  NUMBERED_STREETS.forEach(street => {
+    ctx.fillStyle = asphalt;
+    ctx.fillRect(0 - camX, street.y - camY, WORLD_W, ROAD_W);
+  });
+  NAMED_STREETS.forEach(street => {
+    ctx.fillStyle = asphalt;
+    ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, WORLD_H);
+  });
+
+  // sidewalks only fill the gaps BETWEEN intersections, never inside one
+  ctx.fillStyle = sidewalk;
+  NUMBERED_STREETS.forEach(street => {
+    freeSegments(WORLD_W, namedZones).forEach(seg => {
+      ctx.fillRect(seg.start - camX, street.y - SIDEWALK_W - camY, seg.end - seg.start, SIDEWALK_W);
+      ctx.fillRect(seg.start - camX, street.y + ROAD_W - camY, seg.end - seg.start, SIDEWALK_W);
+    });
+  });
+  NAMED_STREETS.forEach(street => {
+    freeSegments(WORLD_H, numberedZones).forEach(seg => {
+      ctx.fillRect(street.x - SIDEWALK_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
+      ctx.fillRect(street.x + ROAD_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
+    });
+  });
+
+  // dashed centerlines, skipping any dash that would fall inside a cross street
+  ctx.fillStyle = centerline;
+  const dash = 30, gap = 20;
+  NUMBERED_STREETS.forEach(street => {
+    for (let dx = 20; dx < WORLD_W; dx += dash + gap) {
+      const overlapsIntersection = namedZones.some(z => dx < z.end && dx + dash > z.start);
+      if (!overlapsIntersection) {
+        ctx.fillRect(dx - camX, street.y + ROAD_W/2 - 2 - camY, dash, 4);
+      }
+    }
+  });
+  NAMED_STREETS.forEach(street => {
+    for (let dy = 20; dy < WORLD_H; dy += dash + gap) {
+      const overlapsIntersection = numberedZones.some(z => dy < z.end && dy + dash > z.start);
+      if (!overlapsIntersection) {
+        ctx.fillRect(street.x + ROAD_W/2 - 2 - camX, dy - camY, 4, dash);
+      }
+    }
+  });
+
+  // corner sidewalk squares, connecting the numbered and named sidewalks
+  // cleanly at every intersection instead of leaving a gap there
+  ctx.fillStyle = sidewalk;
+  NUMBERED_STREETS.forEach(hs => {
+    NAMED_STREETS.forEach(vs => {
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W); // NW
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W); // NE
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W); // SW
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W); // SE
+    });
+  });
+
+  // street names painted right on the pavement, repeating along the length
+  // so they're readable wherever you're walking - numbers read horizontally,
+  // tree names read vertically along their street
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  const labelSpacing = 500;
+
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  NUMBERED_STREETS.forEach(hs => {
+    const textW = ctx.measureText(hs.name).width;
+    for (let lx = 300; lx < WORLD_W; lx += labelSpacing) {
+      const overlaps = namedZones.some(z => lx - textW/2 < z.end && lx + textW/2 > z.start);
+      if (!overlaps) {
+        ctx.fillText(hs.name, lx - camX, hs.y + 28 - camY);
+      }
+    }
+  });
+
+  NAMED_STREETS.forEach(vs => {
+    const textW = ctx.measureText(vs.name).width; // font is still 18px monospace from above
+    for (let ly = 300; ly < WORLD_H; ly += labelSpacing) {
+      const overlaps = numberedZones.some(z => ly - textW/2 < z.end && ly + textW/2 > z.start);
+      if (!overlaps) {
+        ctx.save();
+        ctx.translate(vs.x + 28 - camX, ly - camY);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(vs.name, 0, 0);
+        ctx.restore();
+      }
+    }
+  });
+}
+
+function drawParkGround(camX, camY) {
+  const px = PARK.x - camX, py = PARK.y - camY;
+
+  // solid grass fill across the whole park block
+  ctx.fillStyle = '#3f7538';
+  ctx.fillRect(px, py, PARK.w, PARK.h);
+
+  const b = PARK_PATH_BAND;
+  ctx.fillStyle = '#c8b585';
+
+  // cross path connecting all four edges of the park
+  ctx.fillRect(px, py + PARK.h/2 - b/2, PARK.w, b);
+  ctx.fillRect(px + PARK.w/2 - b/2, py, b, PARK.h);
+
+  // a loop trail around the pond, so it feels like an actual trail network
+  // rather than a single crossing path
+  const ring = {
+    x: PARK_POND.x - 50, y: PARK_POND.y - 50,
+    w: PARK_POND.w + 100, h: PARK_POND.h + 100
+  };
+  ctx.fillRect(px + ring.x, py + ring.y, ring.w, b);                       // top
+  ctx.fillRect(px + ring.x, py + ring.y + ring.h - b, ring.w, b);          // bottom
+  ctx.fillRect(px + ring.x, py + ring.y, b, ring.h);                      // left
+  ctx.fillRect(px + ring.x + ring.w - b, py + ring.y, b, ring.h);          // right
+
+  // pond
+  ctx.fillStyle = '#3a6fa0';
+  ctx.beginPath();
+  ctx.ellipse(px + PARK_POND.x + PARK_POND.w/2, py + PARK_POND.y + PARK_POND.h/2, PARK_POND.w/2, PARK_POND.h/2, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#2a5580';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  // bushes
+  PARK_BUSHES.forEach(bu => {
+    ctx.fillStyle = '#2f5a2a';
+    ctx.beginPath();
+    ctx.arc(px + bu.x, py + bu.y, 12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#3d6e37';
+    ctx.beginPath();
+    ctx.arc(px + bu.x - 3, py + bu.y - 3, 8, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawTree(px, py, camX, camY) {
+  const x = px - camX, y = py - camY;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 14, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#6b4a2a';
+  ctx.fillRect(-4, -10, 8, 16);
+  ctx.fillStyle = '#2f5a2a';
+  ctx.beginPath();
+  ctx.arc(0, -26, 20, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#3d6e37';
+  ctx.beginPath();
+  ctx.arc(-6, -32, 13, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPineTree(px, py, camX, camY) {
+  const x = px - camX, y = py - camY;
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 13, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = '#5a3a20';
+  ctx.fillRect(-3, -10, 6, 16);
+
+  // stacked triangular tiers, darkest at top
+  ctx.fillStyle = '#26502a';
+  ctx.beginPath(); ctx.moveTo(0, -50); ctx.lineTo(-16, -26); ctx.lineTo(16, -26); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#316232';
+  ctx.beginPath(); ctx.moveTo(0, -38); ctx.lineTo(-14, -16); ctx.lineTo(14, -16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3d7440';
+  ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(-11, -6); ctx.lineTo(11, -6); ctx.closePath(); ctx.fill();
+
+  ctx.restore();
+}
+
+// trees scattered around the city streets - a mix of round canopy and pointy
+// pine, generated at spots clear of every building, road, and the park
+const CITY_TREES = [
+  {"x":2986,"y":1577},{"x":2889,"y":618},{"x":234,"y":1452},{"x":2740,"y":1414},{"x":288,"y":143},
+  {"x":1166,"y":2094},{"x":1555,"y":73},{"x":1499,"y":595},{"x":1705,"y":81},{"x":2577,"y":1095},
+  {"x":2946,"y":1847},{"x":2736,"y":2080},{"x":2845,"y":1423},{"x":2105,"y":1115},{"x":2199,"y":86},
+  {"x":2245,"y":1080},{"x":2570,"y":2056},{"x":2833,"y":1125},{"x":1249,"y":568},{"x":2620,"y":2131},
+  {"x":710,"y":1566},{"x":191,"y":1279},{"x":322,"y":647},{"x":2962,"y":1702},{"x":1492,"y":142},
+  {"x":2082,"y":2090},{"x":1077,"y":2077},{"x":2932,"y":2092}
+].map((t, i) => ({ ...t, pine: i % 3 === 0 })); // mix in pines roughly one in three
+const cityTreeObstacles = CITY_TREES.map(t => ({ x: t.x - 6, y: t.y - 6, w: 12, h: 12 }));
+
+function drawOutside() {
+  let camX = player.x + player.w / 2 - canvas.width / 2;
+  let camY = player.y + player.h / 2 - canvas.height / 2;
+  camX = Math.max(0, Math.min(WORLD_W - canvas.width, camX));
+  camY = Math.max(0, Math.min(WORLD_H - canvas.height, camY));
+
+  ctx.fillStyle = '#4a7c3c';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  const gridSize = 40;
+  for (let gx = -((camX) % gridSize); gx < canvas.width; gx += gridSize) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, canvas.height); ctx.stroke();
+  }
+  for (let gy = -((camY) % gridSize); gy < canvas.height; gy += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+  }
+
+  drawRoads(camX, camY);
+  drawParkGround(camX, camY);
+
+  const drawables = [
+    ...buildings.map(b => ({ type: 'building', obj: b, sortY: b.y + b.h })),
+    ...citizens.filter(c => c.state !== 'inside').map(c => ({ type: 'citizen', obj: c, sortY: c.y })),
+    ...PARK_TREES.map(t => ({ type: 'tree', obj: t, sortY: PARK.y + t.y })),
+    ...CITY_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
+    ...parkWalkers.map(w => ({ type: 'parkwalker', obj: w, sortY: PARK.y + w.y })),
+    { type: 'player', sortY: player.y + player.h }
+  ];
+  drawables.sort((a, b) => a.sortY - b.sortY);
+
+  drawables.forEach(d => {
+    if (d.type === 'building') {
+      drawBuildingExterior(d.obj, camX, camY);
+    } else if (d.type === 'citizen') {
+      const c = d.obj;
+      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, skirt: c.skirt, skirtColor: c.skirtColor });
+    } else if (d.type === 'tree') {
+      drawTree(PARK.x + d.obj.x, PARK.y + d.obj.y, camX, camY);
+    } else if (d.type === 'citytree') {
+      const t = d.obj;
+      if (t.pine) drawPineTree(t.x, t.y, camX, camY);
+      else drawTree(t.x, t.y, camX, camY);
+    } else if (d.type === 'parkwalker') {
+      const w = d.obj;
+      drawDude(PARK.x + w.x - camX, PARK.y + w.y - camY, w.color, null, { gender: w.gender, hairColor: w.hairColor, skirt: w.skirt, skirtColor: w.skirtColor });
+    } else {
+      const px = player.x + player.w / 2 - camX;
+      const py = player.y + player.h - camY;
+      drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor });
+    }
+  });
+
+  drawDialogueUI();
+}
+
+function drawInterior() {
+  const camX = (ROOM_W - canvas.width) / 2;
+  const camY = (ROOM_H - canvas.height) / 2;
+
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const rx = -camX, ry = -camY;
+
+  // floor
+  ctx.fillStyle = currentBuilding.floor;
+  ctx.fillRect(rx, ry, ROOM_W, ROOM_H);
+
+  // walls
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = WALL_THICK;
+  ctx.strokeRect(rx + WALL_THICK/2, ry + WALL_THICK/2, ROOM_W - WALL_THICK, ROOM_H - WALL_THICK);
+
+  // door gap at bottom center
+  const exitZone = { x: ROOM_W/2 - 30, y: ROOM_H - WALL_THICK - 14, w: 60, h: 20 };
+  ctx.fillStyle = '#2a1f18';
+  ctx.fillRect(rx + exitZone.x, ry + ROOM_H - WALL_THICK, exitZone.w, WALL_THICK);
+
+  // room title
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(currentBuilding.name, rx + ROOM_W/2, ry + 26);
+
+  // NPCs and player, depth sorted
+  const drawables = [
+    ...currentBuilding.npcs.map(n => ({ type: 'npc', obj: n, sortY: n.y })),
+    { type: 'player', sortY: player.y + player.h }
+  ];
+  drawables.sort((a, b) => a.sortY - b.sortY);
+
+  drawables.forEach(d => {
+    if (d.type === 'npc') {
+      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, kid: d.obj.isKid, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor });
+    } else {
+      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor });
+    }
+  });
+
+  drawDialogueUI();
+}
+
+function drawDialogueUI() {
+  // "press E to talk" prompt when standing near someone
+  if (nearbyNPC && !dialogueOpen) {
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    const hint = '[E] to talk';
+    const hw = ctx.measureText(hint).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+  }
+
+  // dialogue box
+  if (dialogueOpen && nearbyNPC && dialogueTree) {
+    const node = dialogueTree[dialogueNodeKey];
+    const boxH = node.options ? 110 : 90;
+
+    ctx.fillStyle = 'rgba(10,10,10,0.9)';
+    ctx.fillRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
+
+    const speaker = node.speaker === 'npc' ? nearbyNPC.name : 'You';
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 15px monospace';
+    ctx.fillStyle = node.speaker === 'npc' ? '#ffd27f' : '#7fd0ff';
+    ctx.fillText(speaker + ':', 38, canvas.height - boxH + 4);
+
+    ctx.font = '15px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(node.text, 38, canvas.height - boxH + 30);
+
+    if (node.options) {
+      ctx.font = '13px monospace';
+      ctx.fillStyle = '#7fffb0';
+      node.options.forEach((opt, i) => {
+        ctx.fillText(`[${i + 1}] ${opt.label}`, 38, canvas.height - boxH + 56 + i * 20);
+      });
+    } else {
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#aaa';
+      ctx.textAlign = 'right';
+      ctx.fillText(node.end ? '[E] to close' : '[E] to continue', canvas.width - 38, canvas.height - 30);
+    }
+  }
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (scene === 'outside') drawOutside();
+  else drawInterior();
+}
+
+function loop(timestamp) {
+  update(timestamp || 0);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>

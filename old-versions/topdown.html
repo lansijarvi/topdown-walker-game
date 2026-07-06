@@ -1,0 +1,157 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.01//EN" "http://www.w3.org/TR/html4/strict.dtd">
+<html>
+<head>
+  <meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+  <meta http-equiv="Content-Style-Type" content="text/css">
+  <title></title>
+  <meta name="Generator" content="Cocoa HTML Writer">
+  <meta name="CocoaVersion" content="2685.6">
+  <style type="text/css">
+    p.p1 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica}
+    p.p2 {margin: 0.0px 0.0px 0.0px 0.0px; font: 12.0px Helvetica; min-height: 14.0px}
+  </style>
+</head>
+<body>
+<p class="p1">&lt;!DOCTYPE html&gt;</p>
+<p class="p1">&lt;html&gt;</p>
+<p class="p1">&lt;head&gt;</p>
+<p class="p1">&lt;meta charset="UTF-8"&gt;</p>
+<p class="p1">&lt;style&gt;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>html, body {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>margin: 0;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>padding: 0;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>background: #2b2b2b;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>overflow: hidden;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>height: 100%;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>canvas {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>display: block;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>margin: 0 auto;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>background: #4a7c3c;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>image-rendering: pixelated;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1"><span class="Apple-converted-space">  </span>#info {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>position: fixed;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>top: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>left: 10px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>color: #eee;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>font-family: monospace;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>font-size: 14px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>background: rgba(0,0,0,0.4);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>padding: 6px 10px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>border-radius: 6px;</p>
+<p class="p1"><span class="Apple-converted-space">    </span>max-width: 280px;</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p1">&lt;/style&gt;</p>
+<p class="p1">&lt;/head&gt;</p>
+<p class="p1">&lt;body&gt;</p>
+<p class="p1">&lt;div id="info"&gt;WASD / Arrows to move, hold Shift to run. E to talk. Get close to girls and turn up the heat 😈&lt;/div&gt;</p>
+<p class="p1">&lt;canvas id="game" width="800" height="600"&gt;&lt;/canvas&gt;</p>
+<p class="p1">&lt;script&gt;</p>
+<p class="p1">// YOUR FULL GAME CODE + SEXY UPGRADES</p>
+<p class="p1">const canvas = document.getElementById('game');</p>
+<p class="p1">const ctx = canvas.getContext('2d');</p>
+<p class="p1">const infoEl = document.getElementById('info');</p>
+<p class="p2"><br></p>
+<p class="p1">const WORLD_W = 3700;</p>
+<p class="p1">const WORLD_H = 2200;</p>
+<p class="p1">const ROOM_W = 500;</p>
+<p class="p1">const ROOM_H = 380;</p>
+<p class="p1">const WALL_THICK = 24;</p>
+<p class="p2"><br></p>
+<p class="p1">// Dirty dialogues</p>
+<p class="p1">const ivyTree = {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>start: {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>speaker: 'npc', text: "Hey handsome... want a tattoo, or you wanna fuck the tattoo girl in the back?",</p>
+<p class="p1"><span class="Apple-converted-space">    </span>options: [</p>
+<p class="p1"><span class="Apple-converted-space">      </span>{ label: 'Tattoo', next: 'choose' },</p>
+<p class="p1"><span class="Apple-converted-space">      </span>{ label: 'Fuck you now', next: 'flirt' }</p>
+<p class="p1"><span class="Apple-converted-space">    </span>]</p>
+<p class="p1"><span class="Apple-converted-space">  </span>},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>choose: { speaker: 'npc', text: 'Skull or flower on that hot body?', options: [</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{ label: 'Skull', next: 'skull' },</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{ label: 'Flower', next: 'flower' }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>]},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>skull: { speaker: 'npc', text: "Bad boy... I like it rough. Come get your reward later daddy~", end: true, effect: (p) =&gt; { p.traits.tattoo = 'skull'; p.heat = (p.heat||0) + 30; } },</p>
+<p class="p1"><span class="Apple-converted-space">  </span>flower: { speaker: 'npc', text: "Cute... but I can still be your dirty little secret.", end: true, effect: (p) =&gt; { p.traits.tattoo = 'flower'; p.heat = (p.heat||0) + 20; } },</p>
+<p class="p1"><span class="Apple-converted-space">  </span>flirt: { speaker: 'npc', text: "Mmm yes... lock the door. My pussy is dripping for you already.", end: true, effect: (p) =&gt; { p.heat = (p.heat||0) + 50; } }</p>
+<p class="p1">};</p>
+<p class="p2"><br></p>
+<p class="p1">const breeTree = {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>startSkull: { speaker: 'npc', text: "Fuck, that skull tattoo makes me so wet...", options: [</p>
+<p class="p1"><span class="Apple-converted-space">    </span>{ label: 'Prove it', next: 'dirty' }</p>
+<p class="p1"><span class="Apple-converted-space">  </span>]},</p>
+<p class="p1"><span class="Apple-converted-space">  </span>dirty: { speaker: 'npc', text: "God you're big... I want that cock down my throat right now.", end: true, effect: (p) =&gt; { p.heat = (p.heat||0) + 45; } },</p>
+<p class="p1"><span class="Apple-converted-space">  </span>startFlower: { speaker: 'npc', text: "Flower tattoo? Cute... but I bet you fuck like an animal.", end: true, effect: (p) =&gt; { p.heat = (p.heat||0) + 30; } },</p>
+<p class="p1"><span class="Apple-converted-space">  </span>startNone: { speaker: 'npc', text: "Hey stranger... my shift is boring. Wanna finger me in the bathroom?", end: true, effect: (p) =&gt; { p.heat = (p.heat||0) + 25; } }</p>
+<p class="p1">};</p>
+<p class="p2"><br></p>
+<p class="p1">// (The rest of your full game code stays the same, but with the new drawDude below)</p>
+<p class="p2"><br></p>
+<p class="p1">// SEXY DRAW DUDE</p>
+<p class="p1">function drawDude(cx, cy, color, label, opts) {</p>
+<p class="p1"><span class="Apple-converted-space">  </span>opts = opts || {};</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const facing = opts.facing || 'down';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const gender = opts.gender || 'm';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>const heat = player.heat || 0;</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.save();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.translate(cx, cy);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillStyle = 'rgba(0,0,0,0.4)';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.beginPath(); ctx.ellipse(0, 5, 13, 6, 0, 0, Math.PI*2); ctx.fill();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillStyle = '#1f1f1f';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillRect(-8, -8, 6, 22);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillRect(2, -8, 6, 22);</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (gender === 'f') {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillStyle = opts.skirtColor || '#c2185b';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.moveTo(-11, -19);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.lineTo(11, -19);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.lineTo(15, 6);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.lineTo(-15, 6);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.closePath();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fill();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillStyle = color || '#e83b7e';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.moveTo(-10, -36);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.quadraticCurveTo(-15, -25, -9, -15);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.lineTo(9, -15);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.quadraticCurveTo(15, -25, 10, -36);</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.closePath();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fill();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillStyle = '#f8b0a0';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath(); ctx.ellipse(-5, -27, 8, 10, 0.2, 0, Math.PI*2); ctx.fill();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath(); ctx.ellipse(5, -27, 8, 10, -0.2, 0, Math.PI*2); ctx.fill();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>} else {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillStyle = color || '#3a6fd8';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillRect(-9, -36, 18, 24);</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillStyle = '#f0c090';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.beginPath(); ctx.arc(0, -42, 11, 0, Math.PI*2); ctx.fill();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.fillStyle = opts.hairColor || '#2a1a1a';</p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.beginPath(); ctx.arc(0, -45, 12, Math.PI, Math.PI*2); ctx.fill();</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>if (heat &gt; 15) {</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.fillStyle = 'rgba(255,80,120,0.7)';</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath(); ctx.arc(-4, -38, 4.5, 0, Math.PI*2); ctx.fill();</p>
+<p class="p1"><span class="Apple-converted-space">    </span>ctx.beginPath(); ctx.arc(4, -38, 4.5, 0, Math.PI*2); ctx.fill();</p>
+<p class="p1"><span class="Apple-converted-space">  </span>}</p>
+<p class="p2"><br></p>
+<p class="p1"><span class="Apple-converted-space">  </span>ctx.restore();</p>
+<p class="p1">}</p>
+<p class="p2"><br></p>
+<p class="p1">// (The rest of your original code goes here - the update, draw, loop, etc.)</p>
+<p class="p2"><br></p>
+<p class="p1">requestAnimationFrame(loop);</p>
+<p class="p1">&lt;/script&gt;</p>
+<p class="p1">&lt;/body&gt;</p>
+<p class="p1">&lt;/html&gt;</p>
+</body>
+</html>

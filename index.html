@@ -1,0 +1,2789 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #2b2b2b;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
+    touch-action: none;
+    overscroll-behavior: none;
+  }
+  canvas {
+    display: block;
+    margin: 0 auto;
+    background: #4a7c3c;
+    image-rendering: pixelated;
+    touch-action: none;
+  }
+  #info {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    color: #eee;
+    font-family: monospace;
+    font-size: 12px;
+    background: rgba(0,0,0,0.4);
+    padding: 6px 10px;
+    border-radius: 6px;
+    max-width: 260px;
+    z-index: 20;
+  }
+  #gunControls {
+    position: fixed;
+    bottom: 130px;
+    right: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    z-index: 10;
+  }
+  #gunControls button, .touchBtn {
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 13px;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.4);
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  #shootBtn {
+    background: #b33a3a;
+    color: #fff;
+  }
+  #shootBtn:active {
+    background: #8f2e2e;
+  }
+  #reloadBtn {
+    background: #3a5fb3;
+    color: #fff;
+  }
+  #reloadBtn:active {
+    background: #2e4a8f;
+  }
+
+  /* touch-only controls: virtual d-pad and action buttons */
+  #dpad {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    width: 150px;
+    height: 150px;
+    z-index: 10;
+  }
+  #dpad button {
+    position: absolute;
+    width: 50px;
+    height: 50px;
+    font-size: 18px;
+    border-radius: 10px;
+    border: 2px solid rgba(255,255,255,0.4);
+    background: rgba(255,255,255,0.18);
+    color: #fff;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  #dpad button:active { background: rgba(255,255,255,0.4); }
+  #dpadUp    { left: 50px; top: 0; }
+  #dpadDown  { left: 50px; top: 100px; }
+  #dpadLeft  { left: 0; top: 50px; }
+  #dpadRight { left: 100px; top: 50px; }
+  #dpadRun   { left: 50px; top: 50px; font-size: 10px; background: rgba(255,210,127,0.3); }
+  #dpadRun.active { background: #ffd27f; color: #1a1a1a; border-color: #fff; }
+
+  #actionButtons {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    display: flex;
+    gap: 8px;
+    z-index: 10;
+  }
+  .touchBtn {
+    background: rgba(20,20,20,0.55);
+    color: #fff;
+    width: 54px;
+    height: 54px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 0;
+  }
+  .touchBtn:active { background: rgba(255,210,127,0.35); }
+
+  #dialogueOptions {
+    position: fixed;
+    left: 50%;
+    bottom: 120px;
+    transform: translateX(-50%);
+    display: none;
+    flex-direction: column;
+    gap: 6px;
+    z-index: 30;
+    width: min(90vw, 720px);
+  }
+  #dialogueOptions button {
+    font-family: monospace;
+    font-size: 14px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 2px solid #7fffb0;
+    background: rgba(10,10,10,0.92);
+    color: #7fffb0;
+    text-align: left;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: manipulation;
+  }
+  #dialogueOptions button:active { background: rgba(127,255,176,0.25); }
+
+  /* hide touch controls on devices that clearly have a mouse/keyboard,
+     show them whenever a touch capability is present */
+  body:not(.touch) #dpad,
+  body:not(.touch) #actionButtons {
+    opacity: 0.35;
+  }
+
+  /* movement is frozen during a conversation anyway - hide the pad/buttons
+     so they don't collide with the dialogue box and its option buttons */
+  body.dialogue-open #dpad,
+  body.dialogue-open #actionButtons,
+  body.dialogue-open #gunControls {
+    display: none;
+  }
+</style>
+</head>
+<body>
+<div id="info">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car.</div>
+<canvas id="game" width="800" height="600"></canvas>
+<div id="gunControls">
+  <button id="reloadBtn">RELOAD (R)</button>
+  <button id="shootBtn">SHOOT (Space)</button>
+</div>
+
+<div id="dpad">
+  <button id="dpadUp">▲</button>
+  <button id="dpadDown">▼</button>
+  <button id="dpadLeft">◀</button>
+  <button id="dpadRight">▶</button>
+  <button id="dpadRun">RUN</button>
+</div>
+
+<div id="actionButtons">
+  <button class="touchBtn" id="talkBtn">TALK<br>(E)</button>
+  <button class="touchBtn" id="gunBtn">GUN<br>(G)</button>
+  <button class="touchBtn" id="motoBtn">BIKE<br>(M)</button>
+  <button class="touchBtn" id="carBtn">CAR<br>(C)</button>
+</div>
+
+<div id="dialogueOptions"></div>
+
+<script>
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const infoEl = document.getElementById('info');
+
+// resize the actual drawing surface to fill the screen - all game code reads
+// canvas.width/canvas.height dynamically, so this "just works" for camera
+// centering, HUD placement, and dialogue box sizing at any resolution
+function resizeCanvas() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200));
+
+// detect touch capability so the on-screen controls read at full opacity on
+// phones/tablets and stay faint (but still usable) on desktop
+if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
+  document.body.classList.add('touch');
+}
+
+const WORLD_W = 3700;
+const WORLD_H = 2200;
+const ROOM_W = 500;
+const ROOM_H = 380;
+const WALL_THICK = 24;
+
+// default small-talk tree used by any NPC without a custom conversation
+const helloTree = {
+  start:  { speaker: 'npc', text: 'Hello!', next: 'reply' },
+  reply:  { speaker: 'you', text: 'Hello!', end: true }
+};
+
+// Ivy's tattoo conversation
+const ivyTree = {
+  start: {
+    speaker: 'npc', text: 'Would you like a tattoo?',
+    options: [
+      { label: 'Yes', next: 'choose' },
+      { label: 'No', next: 'decline' }
+    ]
+  },
+  choose: {
+    speaker: 'npc', text: 'Would you like a skull or a flower?',
+    options: [
+      { label: 'Skull', next: 'skullGood' },
+      { label: 'Flower', next: 'flowerGood' }
+    ]
+  },
+  skullGood:  { speaker: 'npc', text: 'Good choice, a skull!', next: 'skullGive' },
+  skullGive:  { speaker: 'npc', text: "Here's your skull!", end: true, effect: (p) => { p.traits.tattoo = 'skull'; } },
+  flowerGood: { speaker: 'npc', text: 'Good choice, a flower!', next: 'flowerGive' },
+  flowerGive: { speaker: 'npc', text: "Here's your flower!", end: true, effect: (p) => { p.traits.tattoo = 'flower'; } },
+  decline:    { speaker: 'npc', text: 'Ok, let me know if you change your mind. See you later!', end: true, effect: (p) => { p.traits.tattoo = 'none'; p.traits.wholesomePath = true; } }
+};
+
+// Bree reacts differently depending on the tattoo you got from Ivy
+const BEER_PRICE = 5;
+const SHOT_PRICE = 10;
+
+// simple beer-only tree, reused for bartenders who don't pour shots
+const beerOnlyTree = {
+  start: { speaker: 'npc', text: "What can I get you?",
+    options: [
+      { label: `Beer ($${BEER_PRICE})`, next: 'checkBeer' },
+      { label: 'Nothing, thanks', next: 'noThanks' }
+    ]
+  },
+  checkBeer: {
+    speaker: 'npc',
+    text: (p) => p.money >= BEER_PRICE ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
+    next: (p) => p.money >= BEER_PRICE ? 'buyBeer' : 'tooExpensive'
+  },
+  buyBeer: {
+    speaker: 'npc', text: "Here's your beer!", end: true,
+    effect: (p) => { p.money -= BEER_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+  },
+  tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
+  noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
+};
+
+const breeTree = {
+  startSkull: {
+    speaker: 'npc', text: "Ooh, a skull tattoo? Somebody's trying to be dangerous.",
+    options: [
+      { label: 'Play it cool', next: 'skullCool' },
+      { label: '"Guilty as charged."', next: 'skullFlirt' }
+    ]
+  },
+  skullCool:  { speaker: 'npc', text: "Mysterious type, huh? I like it.", next: 'orderMenu' },
+  skullFlirt: { speaker: 'npc', text: "Careful, that act might actually work on me.", next: 'orderMenu' },
+
+  startFlower: {
+    speaker: 'npc', text: "A flower tattoo? Sweet. I like a guy in touch with his feelings.",
+    options: [
+      { label: '"I have layers."', next: 'flowerCharm' },
+      { label: 'Shrug', next: 'flowerShrug' }
+    ]
+  },
+  flowerCharm: { speaker: 'npc', text: "Ha! Careful, that's kind of working on me.", next: 'orderMenu' },
+  flowerShrug: { speaker: 'npc', text: "Strong, silent, and floral. Interesting combo.", next: 'orderMenu' },
+
+  startNone: {
+    speaker: 'npc', text: "Hey there. Kind of a blank slate, aren't you?",
+    next: 'noneReply'
+  },
+  noneReply: { speaker: 'you', text: "Guess I haven't found my look yet.", next: 'orderMenu' },
+
+  orderMenu: {
+    speaker: 'npc', text: "What can I get you?",
+    options: [
+      { label: `Beer ($${BEER_PRICE})`, next: 'checkBeer' },
+      { label: `Shot ($${SHOT_PRICE})`, next: 'checkShot' },
+      { label: 'Nothing, thanks', next: 'noThanks' }
+    ]
+  },
+  checkBeer: {
+    speaker: 'npc',
+    text: (p) => p.money >= BEER_PRICE ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
+    next: (p) => p.money >= BEER_PRICE ? 'buyBeer' : 'tooExpensive'
+  },
+  buyBeer: {
+    speaker: 'npc', text: "Here's your beer!", end: true,
+    effect: (p) => { p.money -= BEER_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+  },
+  checkShot: {
+    speaker: 'npc',
+    text: (p) => p.money >= SHOT_PRICE ? "One shot, coming up." : `That's $${SHOT_PRICE}. You're a little short.`,
+    next: (p) => p.money >= SHOT_PRICE ? 'buyShot' : 'tooExpensive'
+  },
+  buyShot: {
+    speaker: 'npc', text: "Here's your shot!", end: true,
+    effect: (p) => { p.money -= SHOT_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+  },
+  tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
+  noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
+};
+
+const GUN_PRICE = 250;
+const MAG_SIZE = 15;
+const MAG_PRICE = 35;
+
+const gunStoreTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => p.hasGun ? "Need more ammo, or something else?" : "You want to buy a gun?",
+    options: (p) => p.hasGun
+      ? [
+          { label: `Buy a magazine ($${MAG_PRICE})`, next: 'checkMagFunds' },
+          { label: 'No thanks', next: 'decline' }
+        ]
+      : [
+          { label: 'Yes', next: 'checkFunds' },
+          { label: 'No', next: 'decline' }
+        ]
+  },
+  checkFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= GUN_PRICE ? `That'll be $${GUN_PRICE}. It's a Glock, comes with one 15-round mag.` : `That's $${GUN_PRICE}. You're short on cash.`,
+    next: (p) => p.money >= GUN_PRICE ? 'purchase' : 'tooExpensive'
+  },
+  purchase: {
+    speaker: 'npc',
+    text: "Here's your Glock! Press G to draw or holster it, Space to fire, R to reload.",
+    end: true,
+    effect: (p) => { p.money -= GUN_PRICE; p.hasGun = true; p.ammoInMag = MAG_SIZE; p.spareMags = 0; }
+  },
+  checkMagFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= MAG_PRICE ? `That'll be $${MAG_PRICE} for a 15-round mag.` : `That's $${MAG_PRICE}. You're short on cash.`,
+    next: (p) => p.money >= MAG_PRICE ? 'purchaseMag' : 'tooExpensive'
+  },
+  purchaseMag: {
+    speaker: 'npc',
+    text: "Here's a fresh mag. Press R to reload when you're running low.",
+    end: true,
+    effect: (p) => { p.money -= MAG_PRICE; p.spareMags += 1; }
+  },
+  tooExpensive: {
+    speaker: 'npc', text: "Come back when you've got the cash.", end: true
+  },
+  decline: {
+    speaker: 'npc', text: "Suit yourself. Let me know if you change your mind.", end: true
+  }
+};
+
+const MOTO_PRICE = 500;
+
+const motoStoreTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => p.hasMotorcycle ? "She still running good for you?" : `Looking for a ride? Got a solid bike for $${MOTO_PRICE}.`,
+    options: (p) => p.hasMotorcycle
+      ? [ { label: 'Just looking', next: 'ownAlready' } ]
+      : [
+          { label: 'Yes', next: 'checkFunds' },
+          { label: 'No', next: 'decline' }
+        ]
+  },
+  ownAlready: {
+    speaker: 'npc', text: "Take care of her and she'll take care of you.", end: true
+  },
+  checkFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= MOTO_PRICE ? `That'll be $${MOTO_PRICE}. What color do you want her in?` : `That's $${MOTO_PRICE}. You're short on cash.`,
+    next: (p) => p.money >= MOTO_PRICE ? 'chooseColor' : 'tooExpensive'
+  },
+  chooseColor: {
+    speaker: 'npc',
+    text: "Pick a color.",
+    options: [
+      { label: 'Red',   next: 'purchase', color: '#8f2e2e' },
+      { label: 'Green', next: 'purchase', color: '#2e8f3e' },
+      { label: 'Black', next: 'purchase', color: '#222222' },
+      { label: 'Blue',  next: 'purchase', color: '#2e4a8f' },
+      { label: 'Grey',  next: 'purchase', color: '#707070' }
+    ]
+  },
+  purchase: {
+    speaker: 'npc',
+    text: "She's all gassed up! Press M to hop on or park it.",
+    end: true,
+    effect: (p) => {
+      p.money -= MOTO_PRICE;
+      p.hasMotorcycle = true;
+      motorcycleParked = { ...MOTO_SHOWROOM_SPOT, color: p.pendingMotoColor || '#8f2e2e' };
+      p.motoColor = p.pendingMotoColor || '#8f2e2e';
+    }
+  },
+  tooExpensive: {
+    speaker: 'npc', text: "Come back when you've got the cash.", end: true
+  },
+  decline: {
+    speaker: 'npc', text: "Alright, she'll be here if you change your mind.", end: true
+  }
+};
+
+const CAR_PRICE = 800;
+
+const carStoreTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => p.hasCar ? "That car treating you right?" : `Got a nice used car for $${CAR_PRICE}, runs great.`,
+    options: (p) => p.hasCar
+      ? [ { label: 'Just looking', next: 'ownAlready' } ]
+      : [
+          { label: 'Yes', next: 'checkFunds' },
+          { label: 'No', next: 'decline' }
+        ]
+  },
+  ownAlready: {
+    speaker: 'npc', text: "Good, good. Keep the oil changed.", end: true
+  },
+  checkFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= CAR_PRICE ? `That'll be $${CAR_PRICE}. What color do you want it in?` : `That's $${CAR_PRICE}. You're short on cash.`,
+    next: (p) => p.money >= CAR_PRICE ? 'chooseColor' : 'tooExpensive'
+  },
+  chooseColor: {
+    speaker: 'npc',
+    text: "Pick a color.",
+    options: [
+      { label: 'Red',   next: 'purchase', color: '#8f2e2e' },
+      { label: 'Green', next: 'purchase', color: '#2e8f3e' },
+      { label: 'Black', next: 'purchase', color: '#222222' },
+      { label: 'Blue',  next: 'purchase', color: '#2e4a8f' },
+      { label: 'Grey',  next: 'purchase', color: '#707070' }
+    ]
+  },
+  purchase: {
+    speaker: 'npc',
+    text: "She's all yours! Press C to hop in or park it.",
+    end: true,
+    effect: (p) => {
+      p.money -= CAR_PRICE;
+      p.hasCar = true;
+      carParked = { ...CAR_SHOWROOM_SPOT, color: p.pendingCarColor || '#8f2e2e' };
+      p.carColor = p.pendingCarColor || '#8f2e2e';
+    }
+  },
+  tooExpensive: {
+    speaker: 'npc', text: "Come back when you've got the cash.", end: true
+  },
+  decline: {
+    speaker: 'npc', text: "Alright, let me know if you change your mind.", end: true
+  }
+};
+
+// Courthouse clerk - pay off any outstanding tickets and fines here
+const courtTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => p.finesOwed > 0 ? `Let's see... you owe $${p.finesOwed} in tickets and fines.` : "No outstanding fines on your record. Stay out of trouble.",
+    options: (p) => p.finesOwed > 0
+      ? [
+          { label: 'Pay it', next: 'checkPay' },
+          { label: 'Not right now', next: 'later' }
+        ]
+      : [ { label: 'Will do', next: 'bye' } ]
+  },
+  checkPay: {
+    speaker: 'npc',
+    text: (p) => p.money >= p.finesOwed ? "Paid in full. You're all square with the city." : "You don't have enough to cover it. Come back with the money.",
+    next: (p) => p.money >= p.finesOwed ? 'paid' : 'bye'
+  },
+  paid: {
+    speaker: 'npc', text: "Try to use the crosswalks next time.", end: true,
+    effect: (p) => { p.money -= p.finesOwed; p.finesOwed = 0; }
+  },
+  later: { speaker: 'npc', text: "It's not going anywhere. Neither are you, legally speaking.", end: true },
+  bye: { speaker: 'npc', text: "Next!", end: true }
+};
+
+// Jail guard - not much conversation to be had
+const jailTree = {
+  start: { speaker: 'npc', text: "No visitors today. Keep your nose clean and we won't meet again.", end: true }
+};
+
+const NUMBERED_STREETS = [
+  { name: '1st St', y: 400 },
+  { name: '2nd St', y: 900 },
+  { name: '3rd St', y: 1900 }
+];
+const NAMED_STREETS = [
+  { name: 'Oak St',   x: 400 },
+  { name: 'Pine St',  x: 900 },
+  { name: 'Elm St',   x: 1900 },
+  { name: 'Maple St', x: 2400 }
+];
+const ROAD_W = 100;
+const SIDEWALK_W = 20;
+
+const H_LANES = [];
+NUMBERED_STREETS.forEach(s => { H_LANES.push(s.y - 10); H_LANES.push(s.y + ROAD_W + 10); });
+const V_LANES = [];
+NAMED_STREETS.forEach(s => { V_LANES.push(s.x - 10); V_LANES.push(s.x + ROAD_W + 10); });
+
+function nearestLane(value, lanes) {
+  return lanes.reduce((best, l) => Math.abs(l - value) < Math.abs(best - value) ? l : best, lanes[0]);
+}
+
+function buildSidewalkPath(sx, sy, ex, ey) {
+  if (Math.abs(sy - ey) < 2) return [{ x: ex, y: ey }];
+  const crossX = nearestLane((sx + ex) / 2, V_LANES);
+  return [
+    { x: crossX, y: sy },
+    { x: crossX, y: ey },
+    { x: ex, y: ey }
+  ];
+}
+
+function randomSidewalkPoint() {
+  const lane = H_LANES[Math.floor(Math.random() * H_LANES.length)];
+  return { x: 100 + Math.random() * (WORLD_W - 200), y: lane };
+}
+
+const buildings = [
+  {x: 20, y: 220, w: 180, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tattoo Parlor', floor: '#3a2a2a', npcs: [{name:'Inkwell Ivy', color:'#c25fae', dialogue: ivyTree}]},
+  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [{name:'Barber Bob', color:'#8f8f5f'}, {name:'Barber Betty', color:'#c2905f'}]},
+  {x: 530, y: 170, w: 160, h: 110, wallH: 100,roof: '#4a6a8a', wall: '#37506a', name: 'Pharmacy', floor: '#2f3a44', npcs: [{name:'Pharmacist Pat', color:'#8fc25f'}]},
+  {x: 2780, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f'}]},
+  {x: 3020, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
+  {x: 1090, y: 190, w: 220, h: 100, wallH: 90, roof: '#8a7a58', wall: '#6a5c40', name: 'Grocery Store', floor: '#4a4433', npcs: [{name:'Stan the Stock Boy', color:'#5fa8c2'}, {name:'Cart Kid Cassie', color:'#c2a05f'}]},
+  {x: 1580, y: 180, w: 240, h: 110,wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Restaurant', floor: '#3a2f22', npcs: [{name:'Waiter Waldo', color:'#c2c25f'}, {name:'Chef Chuck', color:'#c25f5f'}]},
+  {x: 2540, y: 200, w: 220, h: 100, wallH: 80, roof: '#8a7a58', wall: '#6a5c40', name: 'Gun Store', floor: '#3a3a3a', npcs: [{name:'Gunny Sue', color:'#8f8f5f', dialogue: gunStoreTree}]},
+  {x: 2050, y: 220, w: 180, h: 90, wallH: 70, roof: '#6a5a48', wall: '#4a3f30', name: 'Coffee Shop', floor: '#3a2f22', npcs: [{name:'Barista Beth', color:'#c2905f'}]},
+  {x: 1330, y: 190, w: 200, h: 100, wallH: 80, roof: '#5f8a6a', wall: '#40684a', name: 'Pet Store', floor: '#3a3a30', npcs: [{name:'Pet Store Penny', color:'#8fc25f'}]},
+
+  {x: 570, y: 700, w: 260, h: 100, wallH: 80, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tavern', floor: '#3a2a1e', npcs: [
+    {name:'Old Man Gus', color:'#a0a0a0'}, {name:'Regular Rita', color:'#c25f5f'},
+    {name:'Barkeep Hank', color:'#8f7550', dialogue: beerOnlyTree}
+  ], bar: { x: 110, y: 50, w: 280, h: 40, orientation: 'horizontal' }},
+  {x: 1030, y: 720, w: 200, h: 90,  wallH: 70, roof: '#8a7a58', wall: '#6a5c40', name: 'Bar', floor: '#332a22', npcs: [{
+    name:'Bartender Bree', color:'#5f8fc2', dialogue: breeTree,
+    getStartKey: (p) => p.traits.tattoo === 'skull' ? 'startSkull' : p.traits.tattoo === 'flower' ? 'startFlower' : 'startNone'
+  }], bar: { x: 110, y: 50, w: 280, h: 40 }},
+  {x: 1240, y: 720, w: 130, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Strip Club', floor: '#2a1a2a', npcs: [
+    {name:'Bouncer Bruno', color:'#3a3a3a', gender: 'm', hairstyle: 'bald', big: true},
+    {name:'Dancer Destiny', color:'#e05fa0', bikini: true, bikiniColor: '#e05fa0'},
+    {name:'Dancer Crystal', color:'#a05fe0', bikini: true, bikiniColor: '#a05fe0'},
+    {name:'Bartender Vic', color:'#5f8f8f', dialogue: beerOnlyTree}
+  ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }},
+  {x: 1570, y: 680, w: 260, h: 110, wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Home', floor: '#4a3f33', npcs: []},
+  {x: 2100, y: 660, w: 240, h: 120, wallH: 100, roof: '#c25f5f', wall: '#8f3f3f', name: 'Hospital', floor: '#e8e8e8', npcs: [{name:'Nurse Nancy', color:'#5f8fc2'}, {name:'Dr. Dan', color:'#eaeaea'}]},
+
+  {x: 90, y: 1700, w: 220, h: 100, wallH: 80, roof: '#4a8a5a', wall: '#376a44', name: 'Used Motorcycles', floor: '#3a3025', npcs: [{name:'Slick Sal', color:'#c2905f', dialogue: motoStoreTree}], displayBikes: [
+    { x: 430, y: 80,  facing: 'left', color: '#8f2e2e' }, // red
+    { x: 430, y: 140, facing: 'left', color: '#2e8f3e' }, // green
+    { x: 430, y: 200, facing: 'left', color: '#222222' }, // black
+    { x: 430, y: 260, facing: 'left', color: '#2e4a8f' }, // blue
+    { x: 430, y: 320, facing: 'left', color: '#707070' }  // grey
+  ]},
+  {x: 580, y: 1680, w: 240, h: 110, wallH: 90, roof: '#6a4a8a', wall: '#503770', name: 'Used Cars', floor: '#2f3a2f', npcs: [{name:'Lemon Larry', color:'#5fc290', dialogue: carStoreTree}]},
+  {x: 2040, y: 1700, w: 200, h: 100, wallH: 80, roof: '#8a7a58', wall: '#6a5c40', name: 'Mechanic Shop', floor: '#2a2a2a', npcs: [{name:'Wrench Wendy', color:'#909090'}]},
+  {x: 2560, y: 1630, w: 280, h: 150, wallH: 100, roof: '#c2793a', wall: '#8f5a29', name: 'Mega Lo Mart', floor: '#33394a', npcs: [{name:'Greeter Gary', color:'#5f90c2'}, {name:'Cashier Carla', color:'#c25f8f'}]},
+
+  {x: 710, y: 220, w: 150, h: 90, wallH: 70, roof: '#6a8a9a', wall: '#4f6b78', name: 'Apartments', floor: '#3a3530', npcs: [{name:'Neighbor Nadia', color:'#c2905f'}]},
+  {x: 40, y: 720, w: 150, h: 90, wallH: 70, roof: '#c2a25f', wall: '#8f7540', name: 'House', floor: '#3a3025', npcs: [{name:'Neighbor Norm', color:'#5f8fc2'}]},
+  {x: 210, y: 720, w: 150, h: 90, wallH: 70, roof: '#8ac25f', wall: '#5f8f3a', name: 'House', floor: '#3a3a25', npcs: [{name:'Neighbor Nora', color:'#c25f8f'}]},
+  {x: 2540, y: 690, w: 200, h: 100, wallH: 90, roof: '#9a6a8a', wall: '#704f70', name: 'Riverside Apartments', floor: '#332f3a', npcs: [{name:'Tenant Tim', color:'#8fc25f'}]},
+  {x: 2760, y: 690, w: 200, h: 100, wallH: 90, roof: '#c27a5f', wall: '#8f5540', name: 'Sunset Apartments', floor: '#3a2f2a', npcs: [{name:'Tenant Tia', color:'#5fc2a0'}]},
+
+  // --- civic block: police station, courthouse, and jail side by side ---
+  {x: 2990, y: 700, w: 200, h: 100, wallH: 80, roof: '#2a3a6a', wall: '#1f2c4f', name: 'Police Station', floor: '#3a3f4a', npcs: [
+    {name:'Officer Ortiz', color:'#2a3a6a'},
+    {name:'Sergeant Stone', color:'#2a3a6a', gender: 'm', hairstyle: 'square', big: true}
+  ]},
+  {x: 3210, y: 680, w: 220, h: 110, wallH: 90, roof: '#8a8a7a', wall: '#6f6f5f', name: 'Courthouse', floor: '#d8d0c0', npcs: [
+    {name:'Clerk Cliff', color:'#7a7a6a', dialogue: courtTree},
+    {name:'Judge Jean', color:'#2a2a2a'}
+  ]},
+  {x: 3460, y: 700, w: 180, h: 100, wallH: 80, roof: '#5a5a5a', wall: '#454545', name: 'Jail', floor: '#3a3a3a', npcs: [
+    {name:'Guard Greta', color:'#4a4a5a', dialogue: jailTree, big: true}
+  ]}
+];
+
+buildings.forEach(b => b.npcs.forEach(n => {
+  if (!n.gender) Object.assign(n, randomPersonStyle());
+}));
+
+const PARK = { x: 1090, y: 1090, w: 720, h: 720 };
+const PARK_POND = { x: 250, y: 285, w: 220, h: 150 };
+const PARK_PATH_BAND = 20;
+const PARK_TREES = [
+  { x: 60, y: 300 }, { x: 60, y: 420 }, { x: 660, y: 300 }, { x: 660, y: 420 },
+  { x: 300, y: 60 }, { x: 420, y: 60 }, { x: 300, y: 660 }, { x: 420, y: 660 },
+  { x: 150, y: 200 }, { x: 570, y: 200 }, { x: 150, y: 520 }, { x: 570, y: 520 }
+];
+const PARK_BUSHES = [
+  { x: 180, y: 120 }, { x: 540, y: 120 }, { x: 180, y: 600 }, { x: 540, y: 600 },
+  { x: 120, y: 300 }, { x: 120, y: 420 }, { x: 600, y: 300 }, { x: 600, y: 420 },
+  { x: 300, y: 150 }, { x: 420, y: 150 }
+];
+
+const parkWalkers = [
+  { name: 'Park-goer Priya', x: 400, y: 400, targetX: 400, targetY: 400, nextDecision: 0, speed: 0.8, color: '#c25f8f' },
+  { name: 'Stroller Sam',    x: 200, y: 550, targetX: 200, targetY: 550, nextDecision: 0, speed: 0.72, color: '#5f8fc2' },
+  { name: 'Frisbee Fran',    x: 550, y: 150, targetX: 550, targetY: 150, nextDecision: 0, speed: 0.9, color: '#8fc25f' },
+  { name: 'Reader Ray',      x: 600, y: 620, targetX: 600, targetY: 620, nextDecision: 0, speed: 0.6, color: '#c2905f' }
+].map(w => ({ ...w, ...randomPersonStyle(), knockedDownUntil: 0 }));
+
+const parkObstacles = [
+  { x: PARK.x + PARK_POND.x, y: PARK.y + PARK_POND.y, w: PARK_POND.w, h: PARK_POND.h },
+  ...PARK_TREES.map(t => ({ x: PARK.x + t.x - 6, y: PARK.y + t.y - 6, w: 12, h: 12 }))
+];
+
+const citizens = [
+  { name: 'Jogger Jamie',      homeX: 200,  homeY: 390, x: 200,  y: 390, color: '#c2905f' },
+  { name: 'Commuter Cody',     homeX: 600,  homeY: 390, x: 600,  y: 390, color: '#5f8fc2' },
+  { name: 'Dog Walker Dee',    homeX: 800,  homeY: 390, x: 800,  y: 390, color: '#c25f8f' },
+  { name: 'Shopper Shane',     homeX: 1200, homeY: 390, x: 1200, y: 390, color: '#8fc25f' },
+  { name: 'Tourist Tara',      homeX: 1700, homeY: 390, x: 1700, y: 390, color: '#c2c25f' },
+  { name: 'Errand Eddie',      homeX: 2700, homeY: 390, x: 2700, y: 390, color: '#905fc2' },
+
+  { name: 'Regular Rick',      homeX: 700,  homeY: 890, x: 700,  y: 890, color: '#c25f5f' },
+  { name: 'Night Owl Nina',    homeX: 1200, homeY: 890, x: 1200, y: 890, color: '#5fc2a0' },
+  { name: 'Cabbie Carl',       homeX: 1700, homeY: 890, x: 1700, y: 890, color: '#c2905f' },
+
+  { name: 'Grease Monkey Gil', homeX: 200,  homeY: 1890, x: 200,  y: 1890, color: '#5f8fc2' },
+  { name: 'Parts Runner Pete', homeX: 700,  homeY: 1890, x: 700,  y: 1890, color: '#c2a05f' },
+  { name: 'Test Driver Toni',  homeX: 2130, homeY: 1890, x: 2130, y: 1890, color: '#8f8f5f' },
+  { name: 'Cart Pusher Cam',   homeX: 2700, homeY: 1890, x: 2700, y: 1890, color: '#5fc290' },
+  { name: 'Beat Cop Barnes',   homeX: 3080, homeY: 890,  x: 3080, y: 890,  color: '#2a3a6a' },
+].map(c => ({
+  ...c,
+  ...randomPersonStyle(),
+  facing: 'down',
+  path: null, pathIndex: 0,
+  speed: 0.6 + Math.random() * 0.25,
+  nextDecision: 0,
+  state: 'wander',
+  enterTarget: null,
+  insideBuilding: null,
+  insideUntil: 0,
+  knockedDownUntil: 0
+}));
+
+buildings.forEach(b => {
+  b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallH - 10, w: 36, h: 20 };
+  b.npcs.forEach((n, i) => {
+    n.x = 80 + (i % 3) * 140;
+    n.y = 100 + Math.floor(i / 3) * 80;
+    n.targetX = n.x;
+    n.targetY = n.y;
+    n.nextDecision = 0;
+    n.knockedDownUntil = 0;
+  });
+});
+
+// put the dancers up on the stage instead of the generic room layout
+{
+  const stripClub = buildings.find(b => b.name === 'Strip Club');
+  const destiny = stripClub.npcs.find(n => n.name === 'Dancer Destiny');
+  const crystal = stripClub.npcs.find(n => n.name === 'Dancer Crystal');
+  const bruno = stripClub.npcs.find(n => n.name === 'Bouncer Bruno');
+  if (destiny) { destiny.x = 210; destiny.y = 90; destiny.targetX = destiny.x; destiny.targetY = destiny.y; destiny.onStage = true; }
+  if (crystal) { crystal.x = 290; crystal.y = 90; crystal.targetX = crystal.x; crystal.targetY = crystal.y; crystal.onStage = true; }
+  if (bruno) { bruno.x = ROOM_W/2 - 70; bruno.y = ROOM_H - 70; bruno.targetX = bruno.x; bruno.targetY = bruno.y; bruno.guardDoor = true; }
+}
+
+// keep Bree behind the bar counter instead of wandering the whole room
+{
+  const barBuilding = buildings.find(b => b.name === 'Bar');
+  const bree = barBuilding.npcs.find(n => n.name === 'Bartender Bree');
+  if (bree) { bree.x = 250; bree.y = 35; bree.targetX = bree.x; bree.targetY = bree.y; bree.behindBar = true; }
+}
+
+// same for the Tavern's bartender, behind their horizontal counter
+{
+  const tavern = buildings.find(b => b.name === 'Tavern');
+  const hank = tavern.npcs.find(n => n.name === 'Barkeep Hank');
+  if (hank) { hank.x = 250; hank.y = 35; hank.targetX = hank.x; hank.targetY = hank.y; hank.behindBar = true; }
+}
+
+// and the Strip Club's bartender, tucked behind their vertical side bar
+{
+  const stripClubBuilding = buildings.find(b => b.name === 'Strip Club');
+  const vic = stripClubBuilding.npcs.find(n => n.name === 'Bartender Vic');
+  if (vic) { vic.x = 460; vic.y = 220; vic.targetX = vic.x; vic.targetY = vic.y; vic.behindBar = true; }
+}
+
+// the bike sits parked out front of Used Motorcycles in a side profile,
+// facing right, whether or not the player has bought it yet
+const usedMotorcyclesShop = buildings.find(b => b.name === 'Used Motorcycles');
+const MOTO_SHOWROOM_SPOT = {
+  x: usedMotorcyclesShop.doorZone.x + usedMotorcyclesShop.doorZone.w / 2 + 60,
+  y: usedMotorcyclesShop.doorZone.y + usedMotorcyclesShop.doorZone.h,
+  facing: 'right'
+};
+
+// same idea for the car, parked out front of Used Cars
+const usedCarsShop = buildings.find(b => b.name === 'Used Cars');
+const CAR_SHOWROOM_SPOT = {
+  x: usedCarsShop.doorZone.x + usedCarsShop.doorZone.w / 2 + 70,
+  y: usedCarsShop.doorZone.y + usedCarsShop.doorZone.h,
+  facing: 'right'
+};
+
+const player = {
+  x: 60,
+  y: 390,
+  w: 22,
+  h: 16,
+  speed: 1.6,
+  runSpeed: 3.4,
+  facing: 'down',
+  gender: 'm',
+  hairColor: '#3a2a1a',
+  hairstyle: 'square',
+  skinTone: '#f0c090',
+  traits: {},
+  money: 1000,
+  finesOwed: 0,
+  hasGun: false,
+  gunEquipped: false,
+  ammoInMag: 0,
+  spareMags: 0,
+  hasMotorcycle: false,
+  onMotorcycle: false,
+  motoColor: '#8f2e2e',
+  pendingMotoColor: '#8f2e2e',
+  motoSpeed: 3.6,
+  motoBoostSpeed: 5.8,
+  hasCar: false,
+  onCar: false,
+  carColor: '#8f2e2e',
+  pendingCarColor: '#8f2e2e',
+  carSpeed: 4.4,
+  carBoostSpeed: 7.0
+};
+
+let muzzleFlashUntil = 0;
+let lastShotBlockedFlashUntil = 0;
+let bullets = [];
+const BULLET_SPEED = 18;
+const BULLET_LIFETIME_MS = 500;
+const KNOCKDOWN_MS = 3000;
+const HIT_RADIUS = 16;
+
+function muzzleOffset(facing) {
+  if (facing === 'right') return { x: 26, y: -25, vx: 1, vy: 0 };
+  if (facing === 'left')  return { x: -26, y: -25, vx: -1, vy: 0 };
+  if (facing === 'up')    return { x: 8, y: -46, vx: 0, vy: -1 };
+  return { x: 0, y: -3, vx: 0, vy: 1 };
+}
+
+function shoot() {
+  if (dialogueOpen || scene !== 'outside' && scene !== 'interior') return;
+  if (!player.hasGun || !player.gunEquipped) return;
+  if (player.ammoInMag <= 0) {
+    lastShotBlockedFlashUntil = performance.now() + 250;
+    return;
+  }
+  player.ammoInMag--;
+  muzzleFlashUntil = performance.now() + 80;
+
+  const off = muzzleOffset(player.facing);
+  bullets.push({
+    x: player.x + player.w / 2 + off.x,
+    y: player.y + player.h + off.y,
+    vx: off.vx,
+    vy: off.vy,
+    scene: scene,
+    spawn: performance.now()
+  });
+}
+
+function reload() {
+  if (dialogueOpen) return;
+  if (!player.hasGun || player.spareMags <= 0) return;
+  if (player.ammoInMag === MAG_SIZE) return;
+  player.spareMags--;
+  player.ammoInMag = MAG_SIZE;
+}
+
+let scene = 'outside';
+let currentBuilding = null;
+let nearbyNPC = null;
+let dialogueOpen = false;
+let dialogueTree = null;
+let dialogueNodeKey = 'start';
+let lastFrameTime = 0;
+let motorcycleParked = null; // { x, y, facing } when the bike exists in the world, null while being ridden or before purchase
+const MOUNT_RADIUS = 40;
+let carParked = null; // same idea as motorcycleParked, for the car
+let playerHitUntil = 0;    // while set, the player is sprawled on the pavement
+let playerHitPending = false; // waiting to wake up in the hospital
+const HIT_COST = 50;       // hospital bill for getting run over
+const JAYWALK_FINE = 25;   // ticket added to your record each time, payable at the Courthouse
+
+// approximate solid rectangle of a traffic car in world space, matching its
+// drawn size (1.7x scale). The dimension across the road is kept narrow
+// enough to stay inside the road itself, never reaching the sidewalk.
+function trafficCarRect(car) {
+  if (car.axis === 'h') return { x: car.x - 52, y: car.y - 24, w: 104, h: 48 };
+  return { x: car.x - 24, y: car.y - 52, w: 48, h: 104 };
+}
+
+const keys = {};
+function toggleGunEquip() {
+  if (!dialogueOpen && player.hasGun) player.gunEquipped = !player.gunEquipped;
+}
+
+function toggleMotorcycle() {
+  if (dialogueOpen || !player.hasMotorcycle || scene !== 'outside' || player.onCar) return;
+  if (player.onMotorcycle) {
+    player.onMotorcycle = false;
+    motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
+  } else if (motorcycleParked) {
+    const dist = Math.hypot(
+      (player.x + player.w / 2) - motorcycleParked.x,
+      (player.y + player.h / 2) - motorcycleParked.y
+    );
+    if (dist < MOUNT_RADIUS) {
+      player.onMotorcycle = true;
+      motorcycleParked = null;
+    }
+  }
+}
+
+function toggleCar() {
+  if (dialogueOpen || !player.hasCar || scene !== 'outside' || player.onMotorcycle) return;
+  if (player.onCar) {
+    player.onCar = false;
+    carParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.carColor };
+  } else if (carParked) {
+    const dist = Math.hypot(
+      (player.x + player.w / 2) - carParked.x,
+      (player.y + player.h / 2) - carParked.y
+    );
+    if (dist < MOUNT_RADIUS) {
+      player.onCar = true;
+      carParked = null;
+    }
+  }
+}
+
+function pressInteract() {
+  if (dialogueOpen) {
+    const node = dialogueTree[dialogueNodeKey];
+    if (node.options) { syncDialogueOptionsOverlay(); return; } // a numbered choice is required here, not E
+    if (node.end) {
+      dialogueOpen = false;
+    } else if (node.next) {
+      enterNode(typeof node.next === 'function' ? node.next(player) : node.next);
+    }
+  } else if (nearbyNPC) {
+    dialogueTree = nearbyNPC.dialogue || helloTree;
+    const startKey = nearbyNPC.getStartKey ? nearbyNPC.getStartKey(player) : 'start';
+    dialogueOpen = true;
+    enterNode(startKey);
+  }
+  syncDialogueOptionsOverlay();
+}
+
+function selectDialogueOption(idx) {
+  if (!dialogueOpen) return;
+  const node = dialogueTree[dialogueNodeKey];
+  if (!node.options) return;
+  const options = typeof node.options === 'function' ? node.options(player) : node.options;
+  if (idx >= 0 && idx < options.length) {
+    if (options[idx].color) {
+      if (dialogueTree === carStoreTree) player.pendingCarColor = options[idx].color;
+      else player.pendingMotoColor = options[idx].color;
+    }
+    enterNode(options[idx].next);
+  }
+  syncDialogueOptionsOverlay();
+}
+
+// rebuilds the on-screen tappable dialogue buttons (options, or a single
+// continue/close button) to match whatever node is currently showing -
+// this is what makes conversations usable without a physical keyboard
+function syncDialogueOptionsOverlay() {
+  const el = document.getElementById('dialogueOptions');
+  if (!el) return;
+  el.innerHTML = '';
+  document.body.classList.toggle('dialogue-open', dialogueOpen);
+  if (!dialogueOpen || !dialogueTree) { el.style.display = 'none'; return; }
+  const node = dialogueTree[dialogueNodeKey];
+  if (!node) { el.style.display = 'none'; return; }
+
+  el.style.display = 'flex';
+  if (node.options) {
+    const options = typeof node.options === 'function' ? node.options(player) : node.options;
+    options.forEach((opt, i) => {
+      const btn = document.createElement('button');
+      btn.textContent = `${i + 1}. ${opt.label}`;
+      btn.addEventListener('click', () => selectDialogueOption(i));
+      el.appendChild(btn);
+    });
+  } else {
+    const btn = document.createElement('button');
+    btn.textContent = node.end ? 'Close' : 'Continue';
+    btn.style.textAlign = 'center';
+    btn.addEventListener('click', () => pressInteract());
+    el.appendChild(btn);
+  }
+}
+
+window.addEventListener('keydown', e => { keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+
+window.addEventListener('keydown', e => {
+  if (e.key.toLowerCase() === 'g') toggleGunEquip();
+  if (e.key === ' ') {
+    e.preventDefault();
+    shoot();
+  }
+  if (e.key.toLowerCase() === 'r') reload();
+  if (e.key.toLowerCase() === 'm') toggleMotorcycle();
+  if (e.key.toLowerCase() === 'c') toggleCar();
+});
+
+window.addEventListener('keydown', e => {
+  const key = e.key.toLowerCase();
+
+  if (key === 'e') {
+    pressInteract();
+    return;
+  }
+
+  if (dialogueOpen && /^[1-9]$/.test(key)) {
+    selectDialogueOption(parseInt(key, 10) - 1);
+  }
+});
+
+function enterNode(key) {
+  dialogueNodeKey = key;
+  const node = dialogueTree[key];
+  if (node && node.effect) node.effect(player);
+  syncDialogueOptionsOverlay();
+}
+
+function rectsOverlap(a, b) {
+  return a.x < b.x + b.w &&
+         a.x + a.w > b.x &&
+         a.y < b.y + b.h &&
+         a.y + a.h > b.y;
+}
+
+function enterBuilding(b) {
+  if (player.onMotorcycle) {
+    motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
+  }
+  if (player.onCar) {
+    carParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.carColor };
+  }
+  scene = 'interior';
+  currentBuilding = b;
+  player.x = ROOM_W / 2 - player.w / 2;
+  player.y = ROOM_H - 110;
+  player.facing = 'down';
+  player.onMotorcycle = false; // park it outside - nobody's riding through a doorway
+  player.onCar = false;
+  infoEl.textContent = `Inside ${b.name}. Walk down to the door to leave.`;
+}
+
+function exitBuilding() {
+  const b = currentBuilding;
+  player.x = b.doorZone.x + b.doorZone.w / 2 - player.w / 2;
+  player.y = b.doorZone.y + b.doorZone.h + 12;
+  player.facing = 'down';
+  scene = 'outside';
+  currentBuilding = null;
+  nearbyNPC = null;
+  dialogueOpen = false;
+  dialogueTree = null;
+  dialogueNodeKey = 'start';
+  syncDialogueOptionsOverlay();
+  infoEl.textContent = `WASD / Arrows to move. Walk into a building's door to go inside.`;
+}
+
+function isPaved(x, y) {
+  return NUMBERED_STREETS.some(s => y >= s.y - SIDEWALK_W && y <= s.y + ROAD_W + SIDEWALK_W) ||
+         NAMED_STREETS.some(s => x >= s.x - SIDEWALK_W && x <= s.x + ROAD_W + SIDEWALK_W);
+}
+
+function rectOnPavement(rect) {
+  return isPaved(rect.x, rect.y) &&
+         isPaved(rect.x + rect.w, rect.y) &&
+         isPaved(rect.x, rect.y + rect.h) &&
+         isPaved(rect.x + rect.w, rect.y + rect.h);
+}
+
+function tryMoveOutside(dx, dy) {
+  let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
+  next.x = Math.max(0, Math.min(WORLD_W - player.w, next.x));
+  let blocked = buildings.some(b => {
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
+  if (!blocked) player.x = next.x;
+
+  next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
+  next.y = Math.max(0, Math.min(WORLD_H - player.h, next.y));
+  blocked = buildings.some(b => {
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
+  if (!blocked) player.y = next.y;
+}
+
+function tryMoveInterior(dx, dy) {
+  const obstacles = (currentBuilding.displayBikes || []).map(bk => ({ x: bk.x - 24, y: bk.y - 16, w: 48, h: 24 }));
+  if (currentBuilding.bar) obstacles.push(currentBuilding.bar);
+
+  let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
+  next.x = Math.max(WALL_THICK, Math.min(ROOM_W - WALL_THICK - player.w, next.x));
+  if (!obstacles.some(o => rectsOverlap(next, o))) player.x = next.x;
+
+  next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
+  next.y = Math.max(WALL_THICK, Math.min(ROOM_H - WALL_THICK - player.h, next.y));
+  if (!obstacles.some(o => rectsOverlap(next, o))) player.y = next.y;
+}
+
+const BLOOD_FADE_MS = 2000; // how long a blood spot takes to fade once they get back up
+const KNOCKBACK_FRICTION = 0.85; // per-frame-at-60fps decay of knockback velocity
+
+// shared "something just hit this person" handler: knocks them down, gives
+// them a decaying knockback velocity in the direction of the hit (real
+// bounce-and-slide instead of an instant teleport), and drops a blood spot
+// that stays put while they're down and fades out after they get up
+function applyImpact(entity, dirX, dirY, force) {
+  const dist = Math.hypot(dirX, dirY) || 1;
+  entity.kbVX = (dirX / dist) * force;
+  entity.kbVY = (dirY / dist) * force;
+  entity.bloodX = entity.x;
+  entity.bloodY = entity.y;
+  entity.knockedDownUntil = performance.now() + KNOCKDOWN_MS;
+  entity.recovered = false;
+  entity.path = null;
+}
+
+// call every frame for anyone who might currently be knocked down - slides
+// them to a stop via friction rather than leaving them frozen mid-bounce
+function applyKnockbackDecay(entity, dt) {
+  if (!entity.kbVX && !entity.kbVY) return;
+  entity.x = Math.max(0, Math.min(WORLD_W, entity.x + entity.kbVX * dt));
+  entity.y = Math.max(0, Math.min(WORLD_H, entity.y + entity.kbVY * dt));
+  const decay = Math.pow(KNOCKBACK_FRICTION, dt);
+  entity.kbVX *= decay;
+  entity.kbVY *= decay;
+  if (Math.abs(entity.kbVX) < 0.05) entity.kbVX = 0;
+  if (Math.abs(entity.kbVY) < 0.05) entity.kbVY = 0;
+}
+
+// draws a fading red blood spot at a hit location - present while the
+// person is down, fading out over BLOOD_FADE_MS after they get back up
+function drawBloodSpot(entity, camX, camY) {
+  if (entity.bloodX === undefined || !entity.knockedDownUntil) return;
+  const now = performance.now();
+  const sinceUp = now - entity.knockedDownUntil;
+  if (sinceUp > BLOOD_FADE_MS) return;
+  const alpha = sinceUp < 0 ? 0.6 : 0.6 * (1 - sinceUp / BLOOD_FADE_MS);
+  if (alpha <= 0) return;
+  const sx = entity.bloodX - camX, sy = entity.bloodY - camY;
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#7a1010';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy, 10, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(sx - 7, sy + 3, 4, 2.5, 0.4, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.ellipse(sx + 6, sy - 2, 3, 2, -0.3, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function resolveBulletHits(npcList, sceneName) {
+  bullets = bullets.filter(b => {
+    if (b.scene !== sceneName) return true;
+    const hitIdx = npcList.findIndex(n => {
+      if (!n) return false;
+      if (n.knockedDownUntil && performance.now() < n.knockedDownUntil) return false;
+      return Math.hypot(n.x - b.x, n.y - (b.y - 20)) < HIT_RADIUS;
+    });
+    if (hitIdx === -1) return true;
+    const n = npcList[hitIdx];
+    applyImpact(n, b.vx, b.vy, 3.4);
+    return false;
+  });
+}
+
+function update(timestamp, dt) {
+  if (dialogueOpen) {
+    return;
+  }
+
+  citizens.forEach(c => {
+    if (c.state === 'inside' && timestamp > c.insideUntil) {
+      const b = c.insideBuilding;
+      b.npcs = b.npcs.filter(n => !(n.isCitizen && n.citizenRef === c));
+      c.state = 'wander';
+      c.insideBuilding = null;
+      c.x = b.doorZone.x + b.doorZone.w / 2;
+      c.y = b.doorZone.y + b.doorZone.h;
+      c.path = null;
+      c.nextDecision = 0;
+    }
+  });
+
+  bullets = bullets.filter(b => b.scene === scene);
+  bullets.forEach(b => {
+    b.x += b.vx * BULLET_SPEED * dt;
+    b.y += b.vy * BULLET_SPEED * dt;
+  });
+  bullets = bullets.filter(b => performance.now() - b.spawn < BULLET_LIFETIME_MS);
+
+  if (scene === 'outside') {
+    resolveBulletHits(citizens.filter(c => c.state !== 'inside'), 'outside');
+    bullets = bullets.filter(b => {
+      if (b.scene !== 'outside') return true;
+      const bx = b.x - PARK.x, by = b.y - PARK.y;
+      const hit = parkWalkers.find(w => {
+        if (w.knockedDownUntil && performance.now() < w.knockedDownUntil) return false;
+        return Math.hypot(w.x - bx, w.y - (by - 20)) < HIT_RADIUS;
+      });
+      if (!hit) return true;
+      applyImpact(hit, b.vx, b.vy, 3.4);
+      return false;
+    });
+  } else if (scene === 'interior') {
+    resolveBulletHits(currentBuilding.npcs, 'interior');
+  }
+
+  citizens.forEach(c => applyKnockbackDecay(c, dt));
+  parkWalkers.forEach(w => applyKnockbackDecay(w, dt));
+  if (scene === 'interior' && currentBuilding) currentBuilding.npcs.forEach(n => applyKnockbackDecay(n, dt));
+
+  citizens.forEach(c => { if (c.knockedDownUntil && timestamp > c.knockedDownUntil && !c.recovered) { c.recovered = true; c.nextDecision = 0; } });
+  parkWalkers.forEach(w => { if (w.knockedDownUntil && timestamp > w.knockedDownUntil && !w.recovered) { w.recovered = true; w.nextDecision = 0; } });
+  buildings.forEach(b => b.npcs.forEach(n => { if (n.knockedDownUntil && timestamp > n.knockedDownUntil && !n.recovered) { n.recovered = true; n.nextDecision = 0; } }));
+
+  let dx = 0, dy = 0;
+  if (keys['w'] || keys['arrowup']) dy -= 1;
+  if (keys['s'] || keys['arrowdown']) dy += 1;
+  if (keys['a'] || keys['arrowleft']) dx -= 1;
+  if (keys['d'] || keys['arrowright']) dx += 1;
+
+  if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+  if (dx !== 0 || dy !== 0) {
+    if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
+    else player.facing = dy > 0 ? 'down' : 'up';
+  }
+
+  const moveSpeed = player.onCar
+    ? (keys['shift'] ? player.carBoostSpeed : player.carSpeed)
+    : player.onMotorcycle
+    ? (keys['shift'] ? player.motoBoostSpeed : player.motoSpeed)
+    : (keys['shift'] ? player.runSpeed : player.speed);
+
+  // vehicles build up to speed rather than snapping straight to it - walking
+  // and running on foot stay instant, only the car and bike get this ramp
+  if (player.onCar || player.onMotorcycle) {
+    if (dx !== 0 || dy !== 0) {
+      player.rideSpeed = (player.rideSpeed || 0) + (moveSpeed - (player.rideSpeed || 0)) * 0.05 * dt;
+    } else {
+      player.rideSpeed = 0; // stopped - starts building up from zero again next time
+    }
+  } else {
+    player.rideSpeed = 0;
+  }
+  const appliedSpeed = (player.onCar || player.onMotorcycle) ? player.rideSpeed : moveSpeed;
+
+  if (scene === 'outside') {
+    if (performance.now() > playerHitUntil) tryMoveOutside(dx * appliedSpeed * dt, dy * appliedSpeed * dt);
+
+    const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+    for (const b of buildings) {
+      if (player.facing === 'up' && rectsOverlap(playerRect, b.doorZone)) {
+        enterBuilding(b);
+        break;
+      }
+    }
+
+    nearbyNPC = null;
+    const ppx = player.x + player.w / 2;
+    const ppy = player.y + player.h / 2;
+    citizens.forEach(c => {
+      if (c.state === 'inside') return;
+      if (c.knockedDownUntil && timestamp < c.knockedDownUntil) return;
+
+      const dist = Math.hypot(c.x - ppx, c.y - ppy);
+      const isNear = dist < 42;
+      if (isNear) { nearbyNPC = c; return; }
+
+      if (!c.path && timestamp > c.nextDecision) {
+        const roll = Math.random();
+        let destX, destY;
+        if (roll < 0.2) {
+          const b = buildings[Math.floor(Math.random() * buildings.length)];
+          destX = b.doorZone.x + b.doorZone.w / 2;
+          destY = b.doorZone.y + b.doorZone.h;
+          c.enterTarget = b;
+        } else if (roll < 0.45) {
+          destX = c.homeX;
+          destY = c.homeY;
+          c.enterTarget = null;
+        } else {
+          const p = randomSidewalkPoint();
+          destX = p.x;
+          destY = p.y;
+          c.enterTarget = null;
+        }
+        c.path = buildSidewalkPath(c.x, c.y, destX, destY);
+        c.pathIndex = 0;
+        c.nextDecision = timestamp + 5000 + Math.random() * 6000;
+      }
+
+      if (c.path && c.pathIndex < c.path.length) {
+        const wp = c.path[c.pathIndex];
+        const cdx = wp.x - c.x, cdy = wp.y - c.y;
+        const cdist = Math.hypot(cdx, cdy);
+        if (cdist > 4) {
+          if (Math.abs(cdx) > Math.abs(cdy)) c.facing = cdx > 0 ? 'right' : 'left';
+          else c.facing = cdy > 0 ? 'down' : 'up';
+          c.x += (cdx / cdist) * c.speed * dt;
+          c.y += (cdy / cdist) * c.speed * dt;
+        } else {
+          c.pathIndex++;
+          if (c.pathIndex >= c.path.length) {
+            c.path = null;
+            if (c.enterTarget) {
+              const b = c.enterTarget;
+              c.state = 'inside';
+              c.insideBuilding = b;
+              c.insideUntil = timestamp + 8000 + Math.random() * 14000;
+              b.npcs.push({
+                name: c.name, color: c.color, isCitizen: true, citizenRef: c,
+                gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor,
+                x: ROOM_W / 2, y: ROOM_H - 140, targetX: ROOM_W / 2, targetY: ROOM_H - 140, nextDecision: 0,
+                knockedDownUntil: 0
+              });
+              c.enterTarget = null;
+            } else {
+              c.nextDecision = 0;
+            }
+          }
+        }
+      }
+    });
+
+    parkWalkers.forEach(w => {
+      if (w.knockedDownUntil && timestamp < w.knockedDownUntil) return;
+
+      const wx = PARK.x + w.x, wy = PARK.y + w.y;
+      const dist = Math.hypot(wx - ppx, wy - ppy);
+      const isNear = dist < 42;
+      if (isNear) { nearbyNPC = w; return; }
+
+      if (timestamp > w.nextDecision) {
+        let tx, ty;
+        do {
+          tx = 40 + Math.random() * (PARK.w - 80);
+          ty = 40 + Math.random() * (PARK.h - 80);
+        } while (
+          tx > PARK_POND.x - 20 && tx < PARK_POND.x + PARK_POND.w + 20 &&
+          ty > PARK_POND.y - 20 && ty < PARK_POND.y + PARK_POND.h + 20
+        );
+        w.targetX = tx;
+        w.targetY = ty;
+        w.nextDecision = timestamp + 2000 + Math.random() * 3000;
+      }
+      const wdx = w.targetX - w.x, wdy = w.targetY - w.y;
+      const wdist = Math.hypot(wdx, wdy);
+      if (wdist > 2) {
+        const margin = 12;
+        const pondBlocks = (px, py) =>
+          px > PARK_POND.x - margin && px < PARK_POND.x + PARK_POND.w + margin &&
+          py > PARK_POND.y - margin && py < PARK_POND.y + PARK_POND.h + margin;
+
+        const stepX = (wdx / wdist) * w.speed * dt;
+        const stepY = (wdy / wdist) * w.speed * dt;
+
+        const nx = w.x + stepX;
+        if (!pondBlocks(nx, w.y)) w.x = nx;
+
+        const ny = w.y + stepY;
+        if (!pondBlocks(w.x, ny)) w.y = ny;
+      }
+    });
+
+    // background traffic - bouncing back and forth along their street, and
+    // easing over into the correct right-hand lane for whichever direction
+    // they're currently heading (so a U-turn also means a lane change).
+    // Cars hold at a red or yellow light rather than driving straight through.
+    trafficCars.forEach(car => {
+      const stopped = carShouldStopAtLight(car, timestamp);
+      if (car.axis === 'h') {
+        if (!stopped) {
+          car.x += car.dir * car.speed * dt;
+          if (car.x > car.maxX) { car.x = car.maxX; car.dir = -1; }
+          if (car.x < car.minX) { car.x = car.minX; car.dir = 1; }
+        }
+        car.y += (trafficLane(car) - car.y) * 0.06 * dt;
+      } else {
+        if (!stopped) {
+          car.y += car.dir * car.speed * dt;
+          if (car.y > car.maxY) { car.y = car.maxY; car.dir = -1; }
+          if (car.y < car.minY) { car.y = car.minY; car.dir = 1; }
+        }
+        car.x += (trafficLane(car) - car.x) * 0.06 * dt;
+      }
+    });
+
+    // collisions with traffic: pedestrians (and the player, unless safely
+    // inside their own car) get bounced and knocked flat
+    const hitNow = performance.now();
+    trafficCars.forEach(car => {
+      const cr = trafficCarRect(car);
+      const carCx = cr.x + cr.w / 2, carCy = cr.y + cr.h / 2;
+
+      // player, when on foot or on the bike
+      if (!player.onCar && hitNow > playerHitUntil) {
+        const pr = { x: player.x, y: player.y, w: player.w, h: player.h };
+        if (rectsOverlap(pr, cr)) {
+          const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+          applyImpact(player, pcx - carCx, pcy - carCy, 4.6);
+          if (player.onMotorcycle) {
+            player.onMotorcycle = false;
+            motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
+          }
+          player.money = Math.max(0, player.money - HIT_COST);
+          player.finesOwed += JAYWALK_FINE;
+          playerHitUntil = hitNow + 1500;
+          playerHitPending = true;
+        }
+      }
+
+      // wandering citizens get the same treatment as being shot: a real
+      // bounce that slides to a stop, sprawled on the ground for a bit,
+      // then get up and carry on
+      citizens.forEach(c => {
+        if (c.state === 'inside') return;
+        if (c.knockedDownUntil && hitNow < c.knockedDownUntil) return;
+        const ncr = { x: c.x - 8, y: c.y - 30, w: 16, h: 32 };
+        if (rectsOverlap(ncr, cr)) {
+          applyImpact(c, c.x - carCx, c.y - carCy, 4.2);
+        }
+      });
+    });
+
+    // keep the player sliding to a stop after a car impact, same as NPCs
+    if (hitNow < playerHitUntil) applyKnockbackDecay(player, dt);
+
+    // hospital wake-up after being hit
+    if (playerHitPending && performance.now() > playerHitUntil) {
+      playerHitPending = false;
+      const hospital = buildings.find(b => b.name === 'Hospital');
+      enterBuilding(hospital);
+      infoEl.textContent = `You got hit by a car! -$${HIT_COST} hospital bill, and a $${JAYWALK_FINE} jaywalking ticket to pay at the Courthouse. Walk down to the door to leave.`;
+    }
+  } else if (scene === 'interior') {
+    tryMoveInterior(dx * moveSpeed * dt, dy * moveSpeed * dt);
+
+    const exitZone = { x: ROOM_W/2 - 30, y: ROOM_H - WALL_THICK - 14, w: 60, h: 20 };
+    const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
+    if (player.facing === 'down' && rectsOverlap(playerRect, exitZone)) {
+      exitBuilding();
+      return;
+    }
+
+    nearbyNPC = null;
+    const px = player.x + player.w / 2;
+    const py = player.y + player.h / 2;
+    currentBuilding.npcs.forEach(n => {
+      if (n.knockedDownUntil && timestamp < n.knockedDownUntil) return;
+
+      const npcDist = Math.hypot(n.x - px, n.y - py);
+      const isNear = npcDist < (n.behindBar ? 65 : 42);
+      if (isNear) nearbyNPC = n;
+
+      if (isNear) return;
+
+      if (timestamp > n.nextDecision) {
+        if (n.onStage && currentBuilding.stage) {
+          const s = currentBuilding.stage;
+          n.targetX = s.x + 20 + Math.random() * (s.w - 40);
+          n.targetY = s.y + 20 + Math.random() * (s.h - 40);
+        } else if (n.guardDoor) {
+          // small patrol area right by the front door, not blocking it
+          n.targetX = ROOM_W/2 - 100 + Math.random() * 60;
+          n.targetY = ROOM_H - 90 + Math.random() * 30;
+        } else if (n.behindBar && currentBuilding.bar) {
+          const bBar = currentBuilding.bar;
+          if (bBar.orientation === 'vertical') {
+            // wall is to the right of a right-side counter - stand between them
+            n.targetX = Math.min(ROOM_W - WALL_THICK - 6, bBar.x + bBar.w + 5) + Math.random() * 18;
+            n.targetY = bBar.y + 25 + Math.random() * (bBar.h - 50);
+          } else {
+            n.targetX = bBar.x + 30 + Math.random() * (bBar.w - 60);
+            n.targetY = Math.max(WALL_THICK + 6, bBar.y - 25) + Math.random() * 18;
+          }
+        } else {
+          const s = currentBuilding.stage;
+          let tx, ty, guard = 0;
+          do {
+            tx = WALL_THICK + 20 + Math.random() * (ROOM_W - WALL_THICK*2 - 40);
+            ty = WALL_THICK + 20 + Math.random() * (ROOM_H - WALL_THICK*2 - 60);
+            guard++;
+          } while (s && tx > s.x - 15 && tx < s.x + s.w + 15 && ty > s.y - 15 && ty < s.y + s.h + 15 && guard < 20);
+          n.targetX = tx;
+          n.targetY = ty;
+        }
+        n.nextDecision = timestamp + 1500 + Math.random() * 2500;
+      }
+      const ndx = n.targetX - n.x;
+      const ndy = n.targetY - n.y;
+      const dist = Math.hypot(ndx, ndy);
+      if (dist > 2) {
+        const stepX = (ndx / dist) * 0.85 * dt;
+        const stepY = (ndy / dist) * 0.85 * dt;
+        const s = currentBuilding.stage;
+        const stageBlocks = (x, y) => !n.onStage && s && x > s.x - 8 && x < s.x + s.w + 8 && y > s.y - 8 && y < s.y + s.h + 8;
+
+        if (!stageBlocks(n.x + stepX, n.y)) n.x += stepX;
+        if (!stageBlocks(n.x, n.y + stepY)) n.y += stepY;
+      }
+    });
+  }
+}
+
+function drawDude(cx, cy, color, label, opts) {
+  opts = opts || {};
+  const facing = opts.facing || 'down';
+  const gender = opts.gender || 'm';
+  const hairColor = opts.hairColor || '#3a2a1a';
+  const scale = opts.kid ? 0.62 : opts.big ? 1.3 : 1;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+
+  if (opts.knockedDown) {
+    ctx.rotate(Math.PI / 2);
+    ctx.translate(0, 6);
+  }
+
+  ctx.scale(scale, scale);
+
+  const sideRiding = opts.riding && (facing === 'left' || facing === 'right');
+  const frontRiding = opts.riding && (facing === 'up' || facing === 'down');
+
+  if (sideRiding) {
+    // horizontal racing tuck, mirrored so "forward" always reads right
+    const dir = facing === 'left' ? -1 : 1;
+    ctx.scale(dir, 1);
+    ctx.translate(-2, -4);
+  } else if (frontRiding) {
+    ctx.translate(0, -2);
+  }
+
+  if (!opts.riding) {
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  if (!opts.riding) {
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(-7, -12, 5, 13);
+    ctx.fillRect(2, -12, 5, 13);
+  } else if (frontRiding) {
+    // knees tucked forward and low onto the footpegs
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(-12, -13, 6, 8);
+    ctx.fillRect(6, -13, 6, 8);
+  } else if (sideRiding) {
+    // trailing leg, stretched back low and close to the frame
+    ctx.fillStyle = '#2a2a2a';
+    ctx.beginPath();
+    ctx.moveTo(-14, -3);
+    ctx.lineTo(-2, -7);
+    ctx.lineTo(-1, -2);
+    ctx.lineTo(-13, 2);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.fillStyle = color || '#3a6fd8';
+  if (frontRiding) {
+    // short forward-reaching arms, ending right at the handlebar grip
+    ctx.fillRect(-11, -21, 5, 9);
+    ctx.fillRect(6, -21, 5, 9);
+    ctx.fillStyle = '#1c1c1c';
+    ctx.fillRect(-12, -14, 7, 3);
+    ctx.fillRect(5, -14, 7, 3);
+  } else if (sideRiding) {
+    // arm stretched way forward to the low handlebar, classic racing tuck
+    ctx.beginPath();
+    ctx.moveTo(2, -16);
+    ctx.lineTo(17, -11);
+    ctx.lineTo(16, -7);
+    ctx.lineTo(3, -11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#1c1c1c';
+    ctx.fillRect(14, -10, 6, 4);
+  } else {
+    ctx.fillRect(-13, -29, 4, 15);
+    ctx.fillRect(9, -29, 4, 15);
+  }
+
+  ctx.fillStyle = color || '#3a6fd8';
+  if (frontRiding) {
+    // short, compact torso hunched over the tank
+    ctx.beginPath();
+    ctx.moveTo(-8, -22);
+    ctx.lineTo(8, -22);
+    ctx.lineTo(7, -10);
+    ctx.lineTo(-7, -10);
+    ctx.closePath();
+    ctx.fill();
+  } else if (sideRiding) {
+    // torso laid nearly horizontal, low at the back and reaching up
+    // slightly toward the front - the classic tucked racing silhouette
+    ctx.beginPath();
+    ctx.moveTo(-13, -4);
+    ctx.lineTo(-11, -15);
+    ctx.lineTo(6, -18);
+    ctx.lineTo(4, -6);
+    ctx.closePath();
+    ctx.fill();
+  } else if (opts.bikini) {
+    // bare midriff with a small top and bottom instead of a full torso
+    ctx.fillStyle = opts.skinTone || '#f0c090';
+    ctx.beginPath();
+    ctx.moveTo(-9, -31);
+    ctx.lineTo(9, -31);
+    ctx.lineTo(7, -21);
+    ctx.lineTo(8, -10);
+    ctx.lineTo(-8, -10);
+    ctx.lineTo(-7, -21);
+    ctx.closePath();
+    ctx.fill();
+
+    const bikiniColor = opts.bikiniColor || '#c25f8f';
+    ctx.fillStyle = bikiniColor;
+    ctx.fillRect(-8, -31, 6, 6);
+    ctx.fillRect(2, -31, 6, 6);
+    ctx.fillRect(-7, -14, 14, 5);
+  } else if (gender === 'f') {
+    ctx.beginPath();
+    ctx.moveTo(-9, -31);
+    ctx.lineTo(9, -31);
+    ctx.lineTo(7, -21);
+    ctx.lineTo(8, -10);
+    ctx.lineTo(-8, -10);
+    ctx.lineTo(-7, -21);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.beginPath();
+    ctx.ellipse(-4, -25, 3, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(4, -25, 3, 2.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  } else {
+    ctx.fillRect(-9, -31, 18, 21);
+  }
+
+  if (opts.skirt && !opts.riding && !opts.bikini) {
+    ctx.fillStyle = opts.skirtColor || '#c25f8f';
+    ctx.beginPath();
+    ctx.moveTo(-9, -19);
+    ctx.lineTo(9, -19);
+    ctx.lineTo(14, -4);
+    ctx.lineTo(-14, -4);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  // head position: centered and compact when crouched front/back, pushed
+  // forward and down low when tucked in the side-view racing crouch
+  const headX = sideRiding ? 10 : 0;
+  const headY = sideRiding ? -18 : frontRiding ? -26 : -39;
+  const headR = opts.riding ? 8 : 10;
+
+  ctx.fillStyle = opts.skinTone || '#f0c090';
+  ctx.beginPath();
+  ctx.arc(headX, headY, headR, 0, Math.PI * 2);
+  ctx.fill();
+
+  const hairstyle = opts.hairstyle || 'square';
+  if (hairstyle !== 'bald') {
+    ctx.fillStyle = hairColor;
+    if (hairstyle === 'square') {
+      // boxy flat-top instead of a rounded cap
+      ctx.fillRect(headX - headR, headY - headR - 2, headR * 2, headR * 0.9);
+    } else {
+      ctx.beginPath();
+      ctx.arc(headX, headY - 2, headR + 0.5, Math.PI, Math.PI * 2);
+      ctx.fill();
+    }
+    if (!opts.riding) {
+      if (hairstyle === 'bowl') {
+        // short side coverage, down past the ears
+        ctx.fillRect(headX - headR - 1, headY - 2, 4, 10);
+        ctx.fillRect(headX + headR - 3, headY - 2, 4, 10);
+      } else if (hairstyle === 'long') {
+        // longer hair framing the face down to the shoulders
+        ctx.fillRect(headX - headR - 1, headY - 2, 5, 19);
+        ctx.fillRect(headX + headR - 4, headY - 2, 5, 19);
+      }
+    }
+  }
+
+  if (facing !== 'up') {
+    let ex = headX;
+    if (frontRiding) {
+      // no left/right distinction while facing the camera on the bike
+    } else if (!opts.riding) {
+      if (facing === 'left') ex = -3.5;
+      else if (facing === 'right') ex = 3.5;
+    } else if (sideRiding) {
+      ex = headX + 3; // mirroring already handles the flip
+    }
+    const ey = sideRiding ? headY : (frontRiding ? -25 : -38);
+    ctx.fillStyle = '#fff';
+    ctx.beginPath(); ctx.arc(ex - 3, ey, 2.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + 3, ey, 2.1, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.beginPath(); ctx.arc(ex - 3 + (ex - headX) * 0.15, ey, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(ex + 3 + (ex - headX) * 0.15, ey, 1, 0, Math.PI * 2); ctx.fill();
+  }
+
+  if (opts.gunEquipped && !opts.riding) {
+    ctx.fillStyle = '#1c1c1c';
+    if (facing === 'right') {
+      ctx.fillRect(11, -27, 15, 4);
+      ctx.fillRect(11, -23, 4, 7);
+    } else if (facing === 'left') {
+      ctx.fillRect(-26, -27, 15, 4);
+      ctx.fillRect(-15, -23, 4, 7);
+    } else if (facing === 'down') {
+      ctx.fillRect(-2, -22, 4, 16);
+      ctx.fillRect(-4, -8, 8, 5);
+    } else if (facing === 'up') {
+      ctx.fillRect(6, -46, 4, 16);
+      ctx.fillRect(4, -46, 8, 5);
+    }
+
+    if (opts.muzzleFlash) {
+      ctx.fillStyle = '#ffe066';
+      let fx = 0, fy = 0;
+      if (facing === 'right') { fx = 26; fy = -25; }
+      else if (facing === 'left') { fx = -26; fy = -25; }
+      else if (facing === 'down') { fx = 0; fy = -3; }
+      else if (facing === 'up') { fx = 8; fy = -46; }
+      ctx.beginPath();
+      ctx.arc(fx, fy, 6, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = '#fff3c4';
+      ctx.beginPath();
+      ctx.arc(fx, fy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  if (label) {
+    ctx.font = 'bold 11px monospace';
+    ctx.textAlign = 'center';
+    const tw = ctx.measureText(label).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(-tw/2 - 4, -66, tw + 8, 14);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(label, 0, -56);
+  }
+
+  ctx.restore();
+
+  if (opts.knockedDown) {
+    ctx.save();
+    ctx.translate(cx, cy - 24);
+    ctx.font = 'bold 16px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#fff';
+    ctx.fillText('!', 0, 0);
+    ctx.restore();
+  }
+}
+
+// simple top-down motorcycle drawn under the rider's feet, rotated to
+// whichever direction the player is currently facing. Wheels sized up and
+// the frame stretched into more of a cruiser stance so the rider sits low
+// and forward between them instead of perched high on a compact frame.
+function drawMotorcycle(cx, cy, facing, color) {
+  const frameColor = color || '#8f2e2e';
+  ctx.save();
+  ctx.translate(cx, cy - 6);
+  ctx.scale(1.2, 1.2);
+
+  if (facing === 'left' || facing === 'right') {
+    const dir = facing === 'right' ? 1 : -1;
+    ctx.scale(dir, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 13, 26, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // rear wheel - bigger, with a visible tire tread ring
+    ctx.fillStyle = '#0f0f0f';
+    ctx.beginPath(); ctx.arc(-17, 9, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#333';
+    ctx.beginPath(); ctx.arc(-17, 9, 8.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#777';
+    ctx.beginPath(); ctx.arc(-17, 9, 3.5, 0, Math.PI * 2); ctx.fill();
+
+    // front wheel - bigger too, slightly forward and matching size
+    ctx.fillStyle = '#0f0f0f';
+    ctx.beginPath(); ctx.arc(18, 9, 12, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#333';
+    ctx.beginPath(); ctx.arc(18, 9, 8.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#777';
+    ctx.beginPath(); ctx.arc(18, 9, 3.5, 0, Math.PI * 2); ctx.fill();
+
+    // low, stretched cruiser frame between the wheels
+    ctx.fillStyle = frameColor;
+    ctx.beginPath();
+    ctx.moveTo(-20, 6);
+    ctx.lineTo(-9, -6);
+    ctx.lineTo(12, -6);
+    ctx.lineTo(21, 6);
+    ctx.closePath();
+    ctx.fill();
+
+    // seat, wide and low for a cruiser sitting posture
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(-13, -8, 18, 5);
+
+    // front fork raked forward toward the handlebar
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(14, -6);
+    ctx.lineTo(19, 6);
+    ctx.stroke();
+
+    // pulled-back cruiser handlebar
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(9, -15, 3, 8);
+    ctx.fillRect(9, -16, 8, 3);
+
+    // headlight
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath(); ctx.arc(23, -3, 3, 0, Math.PI * 2); ctx.fill();
+
+    // exhaust pipe running low along the far side
+    ctx.fillStyle = '#888';
+    ctx.fillRect(-14, 8, 26, 3);
+
+  } else {
+    if (facing === 'up') ctx.rotate(Math.PI);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath(); ctx.ellipse(0, 3, 14, 22, 0, 0, Math.PI * 2); ctx.fill();
+
+    // front and rear wheels, bigger and stacked front-to-back
+    ctx.fillStyle = '#0f0f0f';
+    ctx.beginPath(); ctx.ellipse(0, -18, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 18, 7, 9, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#555';
+    ctx.beginPath(); ctx.ellipse(0, -18, 4, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 18, 4, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+
+    // body/tank, wider and longer for the cruiser stance
+    ctx.fillStyle = frameColor;
+    ctx.fillRect(-6, -15, 12, 30);
+
+    // seat
+    ctx.fillStyle = '#161616';
+    ctx.fillRect(-7, 3, 14, 11);
+
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath(); ctx.arc(0, -19, 3, 0, Math.PI * 2); ctx.fill();
+
+    // pulled-back handlebar, wider than the old straight bar
+    ctx.fillStyle = '#3a3a3a';
+    ctx.fillRect(-11, -15, 22, 3);
+    ctx.fillRect(-11, -15, 3, 7);
+    ctx.fillRect(8, -15, 3, 7);
+  }
+
+  ctx.restore();
+}
+
+// simple top-down car, boxier and wider than the motorcycle, four wheels
+// visible in the side profile and a windshield band in every orientation
+function drawCar(cx, cy, facing, color, police) {
+  const bodyColor = color || '#8f2e2e';
+  ctx.save();
+  ctx.translate(cx, cy - 8);
+  ctx.scale(1.7, 1.7);
+
+  if (facing === 'left' || facing === 'right') {
+    const dir = facing === 'right' ? 1 : -1;
+    ctx.scale(dir, 1);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 15, 34, 8, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // wheels
+    ctx.fillStyle = '#0f0f0f';
+    ctx.fillRect(-24, 9, 10, 12);
+    ctx.fillRect(12, 9, 10, 12);
+
+    // main body
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.moveTo(-30, 12);
+    ctx.lineTo(-28, -2);
+    ctx.lineTo(-14, -12);
+    ctx.lineTo(14, -12);
+    ctx.lineTo(26, -2);
+    ctx.lineTo(30, 12);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // cabin/windshield band
+    ctx.fillStyle = '#9fd0e8';
+    ctx.beginPath();
+    ctx.moveTo(-12, -11);
+    ctx.lineTo(-6, -20);
+    ctx.lineTo(12, -20);
+    ctx.lineTo(15, -11);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = '#2a2a2a';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(3, -20);
+    ctx.lineTo(1, -11);
+    ctx.stroke();
+
+    // headlight / taillight
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath(); ctx.arc(28, 2, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#c23a3a';
+    ctx.beginPath(); ctx.arc(-28, 2, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    if (police) {
+      // black-and-white door panel plus a red/blue light bar on the roof
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(-14, -8, 28, 12);
+      ctx.fillStyle = '#e03a3a';
+      ctx.fillRect(-3, -24, 5, 3);
+      ctx.fillStyle = '#3a5fe0';
+      ctx.fillRect(2, -24, 5, 3);
+    }
+
+  } else {
+    if (facing === 'down') ctx.rotate(Math.PI);
+
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.beginPath();
+    ctx.ellipse(0, 4, 16, 26, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // wheels peeking out at the corners
+    ctx.fillStyle = '#0f0f0f';
+    ctx.fillRect(-17, -14, 6, 12);
+    ctx.fillRect(11, -14, 6, 12);
+    ctx.fillRect(-17, 8, 6, 12);
+    ctx.fillRect(11, 8, 6, 12);
+
+    // main body
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.moveTo(-14, -24);
+    ctx.lineTo(14, -24);
+    ctx.lineTo(18, -8);
+    ctx.lineTo(18, 20);
+    ctx.lineTo(-18, 20);
+    ctx.lineTo(-14, -8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+
+    // windshield band
+    ctx.fillStyle = '#9fd0e8';
+    ctx.fillRect(-12, -20, 24, 9);
+
+    // headlights
+    ctx.fillStyle = '#ffe066';
+    ctx.beginPath(); ctx.arc(-9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+
+    if (police) {
+      // black hood panel plus a red/blue light bar across the roof
+      ctx.fillStyle = '#1a1a1a';
+      ctx.fillRect(-14, 4, 28, 14);
+      ctx.fillStyle = '#e03a3a';
+      ctx.fillRect(-8, -11, 8, 3);
+      ctx.fillStyle = '#3a5fe0';
+      ctx.fillRect(0, -11, 8, 3);
+    }
+  }
+
+  ctx.restore();
+}
+
+function randomPersonStyle() {
+  const hairColors = ['#2a1e14', '#4a3020', '#6b4a2a', '#1a1a1a', '#8a6a3a', '#c2a05f'];
+  const skirtColors = ['#c25f8f', '#8f5fc2', '#c2905f', '#5f8fc2', '#c25f5f', '#5fc2a0'];
+  const hairstyles = ['square', 'bowl', 'bald', 'long'];
+  const gender = Math.random() < 0.5 ? 'f' : 'm';
+
+  // mostly the default light skin tone, with a real minority of light
+  // brown and brown tones so the town isn't uniformly one shade
+  const skinRoll = Math.random();
+  const skinTone = skinRoll < 0.7 ? '#f0c090' : skinRoll < 0.9 ? '#d9a066' : '#8a5a34';
+
+  return {
+    gender,
+    hairColor: hairColors[Math.floor(Math.random() * hairColors.length)],
+    hairstyle: hairstyles[Math.floor(Math.random() * hairstyles.length)],
+    skinTone,
+    skirt: gender === 'f' && Math.random() < 0.5,
+    skirtColor: skirtColors[Math.floor(Math.random() * skirtColors.length)]
+  };
+}
+
+function drawBuildingExterior(b, camX, camY) {
+  const sx = b.x - camX;
+  const sy = b.y - camY;
+
+  ctx.fillStyle = b.wall;
+  ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(sx, sy, b.w, b.h + b.wallH);
+
+  ctx.fillStyle = 'rgba(255, 240, 180, 0.5)';
+  const winW = 14, winH = 18;
+  for (let wx = sx + 16; wx < sx + b.w - 16; wx += winW + 20) {
+    ctx.fillRect(wx, sy + b.h + 14, winW, winH);
+  }
+
+  const dz = b.doorZone;
+  ctx.fillStyle = '#2a1f18';
+  ctx.fillRect(dz.x - camX, sy + b.h, dz.w, b.wallH);
+
+  ctx.fillStyle = b.roof;
+  ctx.fillRect(sx, sy, b.w, b.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.strokeRect(sx, sy, b.w, b.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(sx, sy, b.w, 8);
+
+  if (b.name) {
+    const labelX = sx + b.w / 2;
+    const labelY = sy - 10;
+    ctx.font = 'bold 14px monospace';
+    ctx.textAlign = 'center';
+    const textW = ctx.measureText(b.name).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(labelX - textW/2 - 6, labelY - 14, textW + 12, 18);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(b.name, labelX, labelY);
+  }
+}
+
+function freeSegments(totalLen, zones) {
+  const sorted = zones.slice().sort((a, b) => a.start - b.start);
+  const segments = [];
+  let cursor = 0;
+  sorted.forEach(z => {
+    if (z.start > cursor) segments.push({ start: cursor, end: z.start });
+    cursor = Math.max(cursor, z.end);
+  });
+  if (cursor < totalLen) segments.push({ start: cursor, end: totalLen });
+  return segments;
+}
+
+function drawRoads(camX, camY) {
+  const asphalt = '#3a3a3a';
+  const sidewalk = '#9a9a92';
+  const centerline = '#d4c24a';
+
+  const namedZones = NAMED_STREETS.map(v => ({ start: v.x - SIDEWALK_W, end: v.x + ROAD_W + SIDEWALK_W }));
+  const numberedZones = NUMBERED_STREETS.map(h => ({ start: h.y - SIDEWALK_W, end: h.y + ROAD_W + SIDEWALK_W }));
+
+  NUMBERED_STREETS.forEach(street => {
+    ctx.fillStyle = asphalt;
+    ctx.fillRect(0 - camX, street.y - camY, WORLD_W, ROAD_W);
+  });
+  NAMED_STREETS.forEach(street => {
+    ctx.fillStyle = asphalt;
+    ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, WORLD_H);
+  });
+
+  ctx.fillStyle = sidewalk;
+  NUMBERED_STREETS.forEach(street => {
+    freeSegments(WORLD_W, namedZones).forEach(seg => {
+      ctx.fillRect(seg.start - camX, street.y - SIDEWALK_W - camY, seg.end - seg.start, SIDEWALK_W);
+      ctx.fillRect(seg.start - camX, street.y + ROAD_W - camY, seg.end - seg.start, SIDEWALK_W);
+    });
+  });
+  NAMED_STREETS.forEach(street => {
+    freeSegments(WORLD_H, numberedZones).forEach(seg => {
+      ctx.fillRect(street.x - SIDEWALK_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
+      ctx.fillRect(street.x + ROAD_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
+    });
+  });
+
+  ctx.fillStyle = centerline;
+  const dash = 30, gap = 20;
+  NUMBERED_STREETS.forEach(street => {
+    for (let dx = 20; dx < WORLD_W; dx += dash + gap) {
+      const overlapsIntersection = namedZones.some(z => dx < z.end && dx + dash > z.start);
+      if (!overlapsIntersection) {
+        ctx.fillRect(dx - camX, street.y + ROAD_W/2 - 2 - camY, dash, 4);
+      }
+    }
+  });
+  NAMED_STREETS.forEach(street => {
+    for (let dy = 20; dy < WORLD_H; dy += dash + gap) {
+      const overlapsIntersection = numberedZones.some(z => dy < z.end && dy + dash > z.start);
+      if (!overlapsIntersection) {
+        ctx.fillRect(street.x + ROAD_W/2 - 2 - camX, dy - camY, 4, dash);
+      }
+    }
+  });
+
+  ctx.fillStyle = sidewalk;
+  NUMBERED_STREETS.forEach(hs => {
+    NAMED_STREETS.forEach(vs => {
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
+    });
+  });
+
+  ctx.fillStyle = 'rgba(255,255,255,0.55)';
+  const labelSpacing = 500;
+
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'center';
+  NUMBERED_STREETS.forEach(hs => {
+    const textW = ctx.measureText(hs.name).width;
+    for (let lx = 300; lx < WORLD_W; lx += labelSpacing) {
+      const overlaps = namedZones.some(z => lx - textW/2 < z.end && lx + textW/2 > z.start);
+      if (!overlaps) {
+        ctx.fillText(hs.name, lx - camX, hs.y + 28 - camY);
+      }
+    }
+  });
+
+  NAMED_STREETS.forEach(vs => {
+    const textW = ctx.measureText(vs.name).width;
+    for (let ly = 300; ly < WORLD_H; ly += labelSpacing) {
+      const overlaps = numberedZones.some(z => ly - textW/2 < z.end && ly + textW/2 > z.start);
+      if (!overlaps) {
+        ctx.save();
+        ctx.translate(vs.x + 28 - camX, ly - camY);
+        ctx.rotate(-Math.PI / 2);
+        ctx.fillText(vs.name, 0, 0);
+        ctx.restore();
+      }
+    }
+  });
+}
+
+function drawParkGround(camX, camY) {
+  const px = PARK.x - camX, py = PARK.y - camY;
+
+  ctx.fillStyle = '#3f7538';
+  ctx.fillRect(px, py, PARK.w, PARK.h);
+
+  const b = PARK_PATH_BAND;
+  ctx.fillStyle = '#c8b585';
+
+  ctx.fillRect(px, py + PARK.h/2 - b/2, PARK.w, b);
+  ctx.fillRect(px + PARK.w/2 - b/2, py, b, PARK.h);
+
+  const ring = {
+    x: PARK_POND.x - 50, y: PARK_POND.y - 50,
+    w: PARK_POND.w + 100, h: PARK_POND.h + 100
+  };
+  ctx.fillRect(px + ring.x, py + ring.y, ring.w, b);
+  ctx.fillRect(px + ring.x, py + ring.y + ring.h - b, ring.w, b);
+  ctx.fillRect(px + ring.x, py + ring.y, b, ring.h);
+  ctx.fillRect(px + ring.x + ring.w - b, py + ring.y, b, ring.h);
+
+  ctx.fillStyle = '#3a6fa0';
+  ctx.beginPath();
+  ctx.ellipse(px + PARK_POND.x + PARK_POND.w/2, py + PARK_POND.y + PARK_POND.h/2, PARK_POND.w/2, PARK_POND.h/2, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.strokeStyle = '#2a5580';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  PARK_BUSHES.forEach(bu => {
+    ctx.fillStyle = '#2f5a2a';
+    ctx.beginPath();
+    ctx.arc(px + bu.x, py + bu.y, 12, 0, Math.PI*2);
+    ctx.fill();
+    ctx.fillStyle = '#3d6e37';
+    ctx.beginPath();
+    ctx.arc(px + bu.x - 3, py + bu.y - 3, 8, 0, Math.PI*2);
+    ctx.fill();
+  });
+}
+
+function drawTree(px, py, camX, camY) {
+  const x = px - camX, y = py - camY;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 14, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#6b4a2a';
+  ctx.fillRect(-4, -10, 8, 16);
+  ctx.fillStyle = '#2f5a2a';
+  ctx.beginPath();
+  ctx.arc(0, -26, 20, 0, Math.PI*2);
+  ctx.fill();
+  ctx.fillStyle = '#3d6e37';
+  ctx.beginPath();
+  ctx.arc(-6, -32, 13, 0, Math.PI*2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawPineTree(px, py, camX, camY) {
+  const x = px - camX, y = py - camY;
+  ctx.save();
+  ctx.translate(x, y);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 4, 13, 5, 0, 0, Math.PI*2);
+  ctx.fill();
+
+  ctx.fillStyle = '#5a3a20';
+  ctx.fillRect(-3, -10, 6, 16);
+
+  ctx.fillStyle = '#26502a';
+  ctx.beginPath(); ctx.moveTo(0, -50); ctx.lineTo(-16, -26); ctx.lineTo(16, -26); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#316232';
+  ctx.beginPath(); ctx.moveTo(0, -38); ctx.lineTo(-14, -16); ctx.lineTo(14, -16); ctx.closePath(); ctx.fill();
+  ctx.fillStyle = '#3d7440';
+  ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(-11, -6); ctx.lineTo(11, -6); ctx.closePath(); ctx.fill();
+
+  ctx.restore();
+}
+
+const CITY_TREES = [
+  {"x":2986,"y":1577},{"x":2889,"y":618},{"x":234,"y":1452},{"x":2740,"y":1414},{"x":288,"y":143},
+  {"x":1166,"y":2094},{"x":1555,"y":73},{"x":1499,"y":595},{"x":1705,"y":81},{"x":2577,"y":1095},
+  {"x":2946,"y":1847},{"x":2736,"y":2080},{"x":2845,"y":1423},{"x":2105,"y":1115},{"x":2199,"y":86},
+  {"x":2245,"y":1080},{"x":2570,"y":2056},{"x":2833,"y":1125},{"x":1249,"y":568},{"x":2620,"y":2131},
+  {"x":710,"y":1566},{"x":191,"y":1279},{"x":322,"y":647},{"x":2962,"y":1702},{"x":1492,"y":142},
+  {"x":2082,"y":2090},{"x":1077,"y":2077},{"x":2932,"y":2092}
+].map((t, i) => ({ ...t, pine: i % 3 === 0 }));
+const cityTreeObstacles = CITY_TREES.map(t => ({ x: t.x - 6, y: t.y - 6, w: 12, h: 12 }));
+
+// right-hand-traffic lane for a car on a street, given its direction:
+// heading east -> south lane, west -> north lane; heading south -> west
+// lane, north -> east lane. Lanes sit a quarter of the road width in
+// from each edge.
+function trafficLane(car) {
+  if (car.axis === 'h') return car.street.y + (car.dir > 0 ? ROAD_W * 0.75 : ROAD_W * 0.25);
+  return car.street.x + (car.dir > 0 ? ROAD_W * 0.25 : ROAD_W * 0.75);
+}
+
+// background traffic - at least 5 cars, up to 10, each sticking to one
+// street and driving back and forth in the proper lane for their current
+// direction. Two police cruisers always patrol on top of that.
+const CAR_COLORS = ['#3a5f8f', '#8f3a3a', '#3a8f5a', '#8f8f3a', '#5f3a8f', '#707070', '#222222', '#8f5a2a'];
+const trafficCars = [];
+{
+  const carCount = 5 + Math.floor(Math.random() * 6);
+  for (let i = 0; i < carCount; i++) {
+    const horizontal = Math.random() < 0.5;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    if (horizontal) {
+      const street = NUMBERED_STREETS[Math.floor(Math.random() * NUMBERED_STREETS.length)];
+      const car = { axis: 'h', street, x: 150 + Math.random() * (WORLD_W - 300), minX: 100, maxX: WORLD_W - 100, dir, speed: 1.6 + Math.random() * 1.2, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+      car.y = trafficLane(car);
+      trafficCars.push(car);
+    } else {
+      const street = NAMED_STREETS[Math.floor(Math.random() * NAMED_STREETS.length)];
+      const car = { axis: 'v', street, y: 150 + Math.random() * (WORLD_H - 300), minY: 100, maxY: WORLD_H - 100, dir, speed: 1.6 + Math.random() * 1.2, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+      car.x = trafficLane(car);
+      trafficCars.push(car);
+    }
+  }
+
+  // two police cruisers on patrol
+  const cruiser1 = { axis: 'h', street: NUMBERED_STREETS[1], x: 800, minX: 100, maxX: WORLD_W - 100, dir: 1, speed: 2.4, color: '#ffffff', police: true };
+  cruiser1.y = trafficLane(cruiser1);
+  trafficCars.push(cruiser1);
+  const cruiser2 = { axis: 'v', street: NAMED_STREETS[1], y: 1400, minY: 100, maxY: WORLD_H - 100, dir: -1, speed: 2.4, color: '#ffffff', police: true };
+  cruiser2.x = trafficLane(cruiser2);
+  trafficCars.push(cruiser2);
+}
+
+// Traffic lights: a synchronized city-wide cycle - all east-west traffic
+// gets a green together, then all north-south traffic, like timed lights
+// along a real grid. One pole sits at each corner of every intersection,
+// and (matching real intersections) the pole that matters for a given
+// direction of travel is the one across the intersection on your right:
+// eastbound reads the SE pole, westbound reads NW, southbound reads SW,
+// northbound reads NE.
+const LIGHT_GREEN_MS = 8000;
+const LIGHT_YELLOW_MS = 2000;
+const LIGHT_CYCLE_MS = (LIGHT_GREEN_MS + LIGHT_YELLOW_MS) * 2;
+
+function getLightPhase(timestamp) {
+  const t = timestamp % LIGHT_CYCLE_MS;
+  if (t < LIGHT_GREEN_MS) return { h: 'green', v: 'red' };
+  if (t < LIGHT_GREEN_MS + LIGHT_YELLOW_MS) return { h: 'yellow', v: 'red' };
+  if (t < LIGHT_GREEN_MS + LIGHT_YELLOW_MS + LIGHT_GREEN_MS) return { h: 'red', v: 'green' };
+  return { h: 'red', v: 'yellow' };
+}
+
+const TRAFFIC_LIGHTS = [];
+NUMBERED_STREETS.forEach(hs => {
+  NAMED_STREETS.forEach(vs => {
+    TRAFFIC_LIGHTS.push({ x: vs.x + ROAD_W + 9, y: hs.y - 9, axis: 'v' });            // NE - northbound
+    TRAFFIC_LIGHTS.push({ x: vs.x - 9, y: hs.y - 9, axis: 'h' });                      // NW - westbound
+    TRAFFIC_LIGHTS.push({ x: vs.x + ROAD_W + 9, y: hs.y + ROAD_W + 9, axis: 'h' });    // SE - eastbound
+    TRAFFIC_LIGHTS.push({ x: vs.x - 9, y: hs.y + ROAD_W + 9, axis: 'v' });             // SW - southbound
+  });
+});
+
+const LIGHT_STOP_MARGIN = 12;   // gap kept before the stop line
+const LIGHT_STOP_ZONE = 40;     // how far out a car starts checking the light
+
+// true if this car should be held at a red/yellow light rather than a
+// green one - checked against every cross-street it could be approaching
+function carShouldStopAtLight(car, timestamp) {
+  const phase = getLightPhase(timestamp);
+  if (car.axis === 'h') {
+    if (phase.h === 'green') return false;
+    return NAMED_STREETS.some(vs => {
+      const nearEdge = car.dir > 0 ? vs.x - LIGHT_STOP_MARGIN : vs.x + ROAD_W + LIGHT_STOP_MARGIN;
+      const approach = car.dir > 0 ? nearEdge - car.x : car.x - nearEdge;
+      return approach >= -2 && approach < LIGHT_STOP_ZONE;
+    });
+  } else {
+    if (phase.v === 'green') return false;
+    return NUMBERED_STREETS.some(hs => {
+      const nearEdge = car.dir > 0 ? hs.y - LIGHT_STOP_MARGIN : hs.y + ROAD_W + LIGHT_STOP_MARGIN;
+      const approach = car.dir > 0 ? nearEdge - car.y : car.y - nearEdge;
+      return approach >= -2 && approach < LIGHT_STOP_ZONE;
+    });
+  }
+}
+
+// small pole with the classic red/yellow/green stacked signal head - all
+// three lenses are always visible, but only the active one is lit up
+function drawTrafficLight(x, y, color, camX, camY) {
+  const sx = x - camX, sy = y - camY;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.beginPath();
+  ctx.ellipse(0, 2, 4, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // pole
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillRect(-1.5, -14, 3, 16);
+
+  // housing box, tall enough for three stacked lenses
+  ctx.fillStyle = '#1a1a1a';
+  ctx.fillRect(-5, -34, 10, 22);
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(-5, -34, 10, 22);
+
+  const lenses = [
+    { name: 'red', y: -29, on: '#e03a3a', off: '#4a1c1c' },
+    { name: 'yellow', y: -23, on: '#ffd23a', off: '#4a3f1c' },
+    { name: 'green', y: -17, on: '#3ae05a', off: '#1c4a28' }
+  ];
+  lenses.forEach(lens => {
+    ctx.fillStyle = lens.name === color ? lens.on : lens.off;
+    ctx.beginPath();
+    ctx.arc(0, lens.y, 2.4, 0, Math.PI * 2);
+    ctx.fill();
+  });
+
+  ctx.restore();
+}
+
+function drawOutside() {
+  let camX = player.x + player.w / 2 - canvas.width / 2;
+  let camY = player.y + player.h / 2 - canvas.height / 2;
+  camX = Math.max(0, Math.min(WORLD_W - canvas.width, camX));
+  camY = Math.max(0, Math.min(WORLD_H - canvas.height, camY));
+
+  ctx.fillStyle = '#4a7c3c';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+  ctx.lineWidth = 1;
+  const gridSize = 40;
+  for (let gx = -((camX) % gridSize); gx < canvas.width; gx += gridSize) {
+    ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, canvas.height); ctx.stroke();
+  }
+  for (let gy = -((camY) % gridSize); gy < canvas.height; gy += gridSize) {
+    ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+  }
+
+  drawRoads(camX, camY);
+  drawParkGround(camX, camY);
+
+  const currentPhase = getLightPhase(performance.now());
+  TRAFFIC_LIGHTS.forEach(light => {
+    drawTrafficLight(light.x, light.y, currentPhase[light.axis], camX, camY);
+  });
+
+  const drawables = [
+    ...buildings.map(b => ({ type: 'building', obj: b, sortY: b.y + b.h })),
+    ...citizens.filter(c => c.state !== 'inside').map(c => ({ type: 'citizen', obj: c, sortY: c.y })),
+    ...PARK_TREES.map(t => ({ type: 'tree', obj: t, sortY: PARK.y + t.y })),
+    ...CITY_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
+    ...parkWalkers.map(w => ({ type: 'parkwalker', obj: w, sortY: PARK.y + w.y })),
+    ...(motorcycleParked ? [{ type: 'parkedmoto', obj: motorcycleParked, sortY: motorcycleParked.y }] : []),
+    ...(!player.hasMotorcycle ? [{ type: 'parkedmoto', obj: MOTO_SHOWROOM_SPOT, sortY: MOTO_SHOWROOM_SPOT.y }] : []),
+    ...(carParked ? [{ type: 'parkedcar', obj: carParked, sortY: carParked.y }] : []),
+    ...(!player.hasCar ? [{ type: 'parkedcar', obj: CAR_SHOWROOM_SPOT, sortY: CAR_SHOWROOM_SPOT.y }] : []),
+    ...trafficCars.map(car => ({ type: 'trafficcar', obj: car, sortY: car.y })),
+    { type: 'player', sortY: player.y + player.h }
+  ];
+  drawables.sort((a, b) => a.sortY - b.sortY);
+
+  drawables.forEach(d => {
+    if (d.type === 'building') {
+      drawBuildingExterior(d.obj, camX, camY);
+    } else if (d.type === 'citizen') {
+      const c = d.obj;
+      const isDown = c.knockedDownUntil && performance.now() < c.knockedDownUntil;
+      drawBloodSpot(c, camX, camY);
+      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor, knockedDown: isDown });
+    } else if (d.type === 'tree') {
+      drawTree(PARK.x + d.obj.x, PARK.y + d.obj.y, camX, camY);
+    } else if (d.type === 'citytree') {
+      const t = d.obj;
+      if (t.pine) drawPineTree(t.x, t.y, camX, camY);
+      else drawTree(t.x, t.y, camX, camY);
+    } else if (d.type === 'parkwalker') {
+      const w = d.obj;
+      const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
+      drawBloodSpot(w, camX - PARK.x, camY - PARK.y);
+      drawDude(PARK.x + w.x - camX, PARK.y + w.y - camY, w.color, null, { gender: w.gender, hairColor: w.hairColor, hairstyle: w.hairstyle, skinTone: w.skinTone, skirt: w.skirt, skirtColor: w.skirtColor, knockedDown: isDown });
+    } else if (d.type === 'parkedmoto') {
+      drawMotorcycle(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
+    } else if (d.type === 'parkedcar') {
+      drawCar(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
+    } else if (d.type === 'trafficcar') {
+      const car = d.obj;
+      const facing = car.axis === 'h' ? (car.dir > 0 ? 'right' : 'left') : (car.dir > 0 ? 'down' : 'up');
+      drawCar(car.x - camX, car.y - camY, facing, car.color, car.police);
+    } else {
+      const px = player.x + player.w / 2 - camX;
+      const py = player.y + player.h - camY;
+      if (player.onCar) {
+        drawCar(px, py, player.facing, player.carColor);
+      } else {
+        if (player.onMotorcycle) drawMotorcycle(px, py, player.facing, player.motoColor);
+        drawBloodSpot(player, camX, camY);
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil });
+      }
+    }
+  });
+
+  bullets.forEach(b => {
+    if (b.scene !== 'outside') return;
+    ctx.save();
+    ctx.translate(b.x - camX, b.y - camY);
+    ctx.rotate(Math.atan2(b.vy, b.vx));
+    ctx.fillStyle = '#fff3c4';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  if (motorcycleParked && !player.onMotorcycle) {
+    const mdist = Math.hypot(
+      (player.x + player.w / 2) - motorcycleParked.x,
+      (player.y + player.h / 2) - motorcycleParked.y
+    );
+    if (mdist < MOUNT_RADIUS) {
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      const hint = '[M] to ride';
+      const hw = ctx.measureText(hint).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    }
+  }
+
+  if (carParked && !player.onCar) {
+    const cdist = Math.hypot(
+      (player.x + player.w / 2) - carParked.x,
+      (player.y + player.h / 2) - carParked.y
+    );
+    if (cdist < MOUNT_RADIUS) {
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      const hint = '[C] to drive';
+      const hw = ctx.measureText(hint).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    }
+  }
+
+  drawDialogueUI();
+}
+
+function drawInterior() {
+  const camX = (ROOM_W - canvas.width) / 2;
+  const camY = (ROOM_H - canvas.height) / 2;
+
+  ctx.fillStyle = '#111';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  const rx = -camX, ry = -camY;
+
+  ctx.fillStyle = currentBuilding.floor;
+  ctx.fillRect(rx, ry, ROOM_W, ROOM_H);
+
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = WALL_THICK;
+  ctx.strokeRect(rx + WALL_THICK/2, ry + WALL_THICK/2, ROOM_W - WALL_THICK, ROOM_H - WALL_THICK);
+
+  const exitZone = { x: ROOM_W/2 - 30, y: ROOM_H - WALL_THICK - 14, w: 60, h: 20 };
+  ctx.fillStyle = '#2a1f18';
+  ctx.fillRect(rx + exitZone.x, ry + ROOM_H - WALL_THICK, exitZone.w, WALL_THICK);
+
+  if (currentBuilding.stage) {
+    const s = currentBuilding.stage;
+    // raised stage platform
+    ctx.fillStyle = '#4a2f4a';
+    ctx.fillRect(rx + s.x, ry + s.y, s.w, s.h);
+    ctx.strokeStyle = '#ffd27f';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(rx + s.x, ry + s.y, s.w, s.h);
+    // string lights along the front edge
+    ctx.fillStyle = '#ffe066';
+    for (let lx = s.x + 6; lx < s.x + s.w - 6; lx += 14) {
+      ctx.beginPath();
+      ctx.arc(rx + lx, ry + s.y + s.h, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // pole, running floor to ceiling in the middle of the stage
+    ctx.fillStyle = 'rgba(0,0,0,0.3)';
+    ctx.beginPath();
+    ctx.ellipse(rx + s.poleX, ry + s.poleY + 4, 8, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#d8d8d8';
+    ctx.fillRect(rx + s.poleX - 3, ry + s.y - 10, 6, s.h + 10);
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+    ctx.fillRect(rx + s.poleX - 1, ry + s.y - 10, 2, s.h + 10);
+  }
+
+  if (currentBuilding.bar) {
+    const bBar = currentBuilding.bar;
+    // wooden counter
+    ctx.fillStyle = '#5a3a20';
+    ctx.fillRect(rx + bBar.x, ry + bBar.y, bBar.w, bBar.h);
+    ctx.strokeStyle = '#2a1a10';
+    ctx.lineWidth = 3;
+    ctx.strokeRect(rx + bBar.x, ry + bBar.y, bBar.w, bBar.h);
+
+    if (bBar.orientation === 'vertical') {
+      // top edge highlight along the customer-facing (left) side
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(rx + bBar.x, ry + bBar.y, 5, bBar.h);
+      // shelf of bottles against the wall, to the right of the counter
+      ctx.fillStyle = '#3a2a15';
+      ctx.fillRect(rx + bBar.x + bBar.w, ry + bBar.y + 10, 10, bBar.h - 20);
+      ctx.fillStyle = '#7fc2e0';
+      for (let by = bBar.y + 20; by < bBar.y + bBar.h - 20; by += 18) {
+        ctx.fillRect(rx + bBar.x + bBar.w + 1, ry + by, 9, 5);
+      }
+    } else {
+      // top edge highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.15)';
+      ctx.fillRect(rx + bBar.x, ry + bBar.y, bBar.w, 5);
+      // shelf of bottles along the back wall
+      ctx.fillStyle = '#3a2a15';
+      ctx.fillRect(rx + bBar.x + 10, ry + bBar.y - 16, bBar.w - 20, 10);
+      ctx.fillStyle = '#7fc2e0';
+      for (let bx = bBar.x + 20; bx < bBar.x + bBar.w - 20; bx += 18) {
+        ctx.fillRect(rx + bx, ry + bBar.y - 15, 5, 9);
+      }
+    }
+  }
+
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText(currentBuilding.name, rx + ROOM_W/2, ry + 26);
+
+  const drawables = [
+    ...(currentBuilding.displayBikes || []).map(bk => ({ type: 'displaybike', obj: bk, sortY: bk.y })),
+    ...currentBuilding.npcs.map(n => ({ type: 'npc', obj: n, sortY: n.y })),
+    { type: 'player', sortY: player.y + player.h }
+  ];
+  drawables.sort((a, b) => a.sortY - b.sortY);
+
+  drawables.forEach(d => {
+    if (d.type === 'npc') {
+      const isDown = d.obj.knockedDownUntil && performance.now() < d.obj.knockedDownUntil;
+      drawBloodSpot(d.obj, -rx, -ry);
+      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, knockedDown: isDown });
+    } else if (d.type === 'displaybike') {
+      drawMotorcycle(rx + d.obj.x, ry + d.obj.y, d.obj.facing, d.obj.color);
+    } else {
+      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil });
+    }
+  });
+
+  bullets.forEach(b => {
+    if (b.scene !== 'interior') return;
+    ctx.save();
+    ctx.translate(rx + b.x, ry + b.y);
+    ctx.rotate(Math.atan2(b.vy, b.vx));
+    ctx.fillStyle = '#fff3c4';
+    ctx.beginPath();
+    ctx.ellipse(0, 0, 5, 2, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  });
+
+  drawDialogueUI();
+}
+
+function drawDialogueUI() {
+  if (nearbyNPC && !dialogueOpen) {
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    const hint = '[E] to talk';
+    const hw = ctx.measureText(hint).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.6)';
+    ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+    ctx.fillStyle = '#fff';
+    ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+  }
+
+  if (dialogueOpen && nearbyNPC && dialogueTree) {
+    const node = dialogueTree[dialogueNodeKey];
+    const options = node.options ? (typeof node.options === 'function' ? node.options(player) : node.options) : null;
+    const boxH = 90;
+
+    ctx.fillStyle = 'rgba(10,10,10,0.9)';
+    ctx.fillRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
+
+    const speaker = node.speaker === 'npc' ? nearbyNPC.name : 'You';
+    ctx.textAlign = 'left';
+    ctx.font = 'bold 15px monospace';
+    ctx.fillStyle = node.speaker === 'npc' ? '#ffd27f' : '#7fd0ff';
+    ctx.fillText(speaker + ':', 38, canvas.height - boxH + 4);
+
+    ctx.font = '15px monospace';
+    ctx.fillStyle = '#fff';
+    const nodeText = typeof node.text === 'function' ? node.text(player) : node.text;
+    ctx.fillText(nodeText, 38, canvas.height - boxH + 30);
+
+    if (options) {
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#7fffb0';
+      ctx.textAlign = 'right';
+      ctx.fillText('Choose below, or press 1-9', canvas.width - 38, canvas.height - 30);
+    } else {
+      ctx.font = '12px monospace';
+      ctx.fillStyle = '#aaa';
+      ctx.textAlign = 'right';
+      ctx.fillText(node.end ? '[E] to close' : '[E] to continue', canvas.width - 38, canvas.height - 30);
+    }
+  }
+}
+
+function drawHUD() {
+  ctx.font = 'bold 18px monospace';
+  ctx.textAlign = 'right';
+  const cashText = `$${player.money}`;
+  const ctw = ctx.measureText(cashText).width;
+  ctx.fillStyle = 'rgba(0,0,0,0.55)';
+  ctx.fillRect(canvas.width - ctw - 34, 10, ctw + 24, 30);
+  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(canvas.width - ctw - 34, 10, ctw + 24, 30);
+  ctx.fillStyle = '#7fffb0';
+  ctx.fillText(cashText, canvas.width - 22, 31);
+
+  if (player.hasGun) {
+    const flashEmpty = performance.now() < lastShotBlockedFlashUntil;
+    const ammoText = `${player.ammoInMag}/${MAG_SIZE}  •  ${player.spareMags} mag${player.spareMags === 1 ? '' : 's'}`;
+    ctx.font = 'bold 14px monospace';
+    const atw = ctx.measureText(ammoText).width;
+    ctx.fillStyle = 'rgba(0,0,0,0.55)';
+    ctx.fillRect(canvas.width - atw - 30, 46, atw + 20, 24);
+    ctx.strokeStyle = flashEmpty ? '#ff6b6b' : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(canvas.width - atw - 30, 46, atw + 20, 24);
+    ctx.fillStyle = flashEmpty ? '#ff6b6b' : (player.ammoInMag === 0 ? '#ff9f7f' : '#ffd27f');
+    ctx.fillText(ammoText, canvas.width - 20, 63);
+  }
+
+  if (dialogueOpen) return;
+
+  const items = [];
+  if (player.hasGun) {
+    items.push({
+      label: 'Glock',
+      sub: player.gunEquipped ? `${player.ammoInMag}/${MAG_SIZE}` : 'Holstered',
+      active: player.gunEquipped
+    });
+  }
+  if (player.hasMotorcycle) {
+    items.push({
+      label: 'Motorcycle',
+      sub: player.onMotorcycle ? 'Riding' : 'Parked',
+      active: player.onMotorcycle
+    });
+  }
+  if (player.hasCar) {
+    items.push({
+      label: 'Car',
+      sub: player.onCar ? 'Driving' : 'Parked',
+      active: player.onCar
+    });
+  }
+  if (player.traits.tattoo && player.traits.tattoo !== 'none') {
+    items.push({ label: player.traits.tattoo === 'skull' ? 'Skull Tat' : 'Flower Tat', sub: '', active: false });
+  }
+  if (items.length === 0) return;
+
+  const slotW = 84, slotH = 46, gap = 8;
+  let sx = 14;
+  const sy = canvas.height - slotH - 14;
+  items.forEach(item => {
+    ctx.fillStyle = item.active ? 'rgba(255,210,127,0.25)' : 'rgba(0,0,0,0.55)';
+    ctx.fillRect(sx, sy, slotW, slotH);
+    ctx.strokeStyle = item.active ? '#ffd27f' : 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(sx, sy, slotW, slotH);
+
+    ctx.textAlign = 'center';
+    ctx.font = 'bold 12px monospace';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(item.label, sx + slotW / 2, sy + 20);
+    if (item.sub) {
+      ctx.font = '10px monospace';
+      ctx.fillStyle = item.active ? '#ffd27f' : '#aaa';
+      ctx.fillText(item.sub, sx + slotW / 2, sy + 36);
+    }
+    sx += slotW + gap;
+  });
+}
+
+function draw() {
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  if (scene === 'outside') drawOutside();
+  else drawInterior();
+  drawHUD();
+}
+
+function loop(timestamp) {
+  timestamp = timestamp || 0;
+  if (!lastFrameTime) lastFrameTime = timestamp;
+  let dt = (timestamp - lastFrameTime) / (1000 / 60);
+  dt = Math.max(0, Math.min(dt, 3));
+  lastFrameTime = timestamp;
+
+  update(timestamp, dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+document.getElementById('shootBtn').addEventListener('click', shoot);
+document.getElementById('reloadBtn').addEventListener('click', reload);
+
+// helper to bind a "held down" virtual key to a button, using both touch
+// and mouse events so it also works for testing with a mouse on desktop
+function bindHoldButton(id, keyName) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const press = (e) => { e.preventDefault(); keys[keyName] = true; };
+  const release = (e) => { e.preventDefault(); keys[keyName] = false; };
+  el.addEventListener('touchstart', press, { passive: false });
+  el.addEventListener('touchend', release, { passive: false });
+  el.addEventListener('touchcancel', release, { passive: false });
+  el.addEventListener('mousedown', press);
+  el.addEventListener('mouseup', release);
+  el.addEventListener('mouseleave', release);
+}
+
+bindHoldButton('dpadUp', 'w');
+bindHoldButton('dpadDown', 's');
+bindHoldButton('dpadLeft', 'a');
+bindHoldButton('dpadRight', 'd');
+
+// RUN is a toggle instead of a hold button - trying to hold it down while
+// also pressing a direction button is awkward with one thumb, so tap once
+// to start running and tap again to stop
+const runBtn = document.getElementById('dpadRun');
+if (runBtn) {
+  const toggleRun = (e) => {
+    e.preventDefault();
+    keys['shift'] = !keys['shift'];
+    runBtn.classList.toggle('active', keys['shift']);
+  };
+  runBtn.addEventListener('touchstart', toggleRun, { passive: false });
+  runBtn.addEventListener('click', toggleRun);
+}
+
+// one-shot action buttons - fire once per tap rather than being held
+function bindTapButton(id, fn) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const fire = (e) => { e.preventDefault(); fn(); };
+  el.addEventListener('touchstart', fire, { passive: false });
+  el.addEventListener('click', fire);
+}
+
+bindTapButton('talkBtn', pressInteract);
+bindTapButton('gunBtn', toggleGunEquip);
+bindTapButton('motoBtn', toggleMotorcycle);
+bindTapButton('carBtn', toggleCar);
+
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
