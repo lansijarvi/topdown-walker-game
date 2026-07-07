@@ -1430,7 +1430,8 @@ function update(timestamp, dt) {
 
   if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
 
-  if (dx !== 0 || dy !== 0) {
+  player.moving = dx !== 0 || dy !== 0;
+  if (player.moving) {
     if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
     else player.facing = dy > 0 ? 'down' : 'up';
   }
@@ -1763,6 +1764,24 @@ function drawDude(cx, cy, color, label, opts) {
   const sideRiding = opts.riding && (facing === 'left' || facing === 'right');
   const frontRiding = opts.riding && (facing === 'up' || facing === 'down');
 
+  // subtle life: a light bob while walking, or a slow idle sway while
+  // standing still - skipped for riders and anyone currently knocked down.
+  // Idle phase is offset by screen position (stable while stationary) so a
+  // crowd of standing NPCs doesn't all sway in lockstep.
+  let legSwing = 0;
+  if (!opts.riding && !opts.knockedDown) {
+    const t = performance.now() / 1000;
+    let bodyBob;
+    if (opts.moving) {
+      const walkPhase = t * 9;
+      legSwing = Math.sin(walkPhase) * 3;
+      bodyBob = Math.abs(Math.sin(walkPhase)) * 1.4;
+    } else {
+      bodyBob = Math.sin(t * 1.6 + (cx + cy) * 0.05) * 0.8;
+    }
+    ctx.translate(0, -bodyBob);
+  }
+
   if (sideRiding) {
     // horizontal racing tuck, mirrored so "forward" always reads right
     const dir = facing === 'left' ? -1 : 1;
@@ -1781,8 +1800,8 @@ function drawDude(cx, cy, color, label, opts) {
 
   if (!opts.riding) {
     ctx.fillStyle = '#2a2a2a';
-    ctx.fillRect(-7, -12, 5, 13);
-    ctx.fillRect(2, -12, 5, 13);
+    ctx.fillRect(-7, -12 + legSwing, 5, 13);
+    ctx.fillRect(2, -12 - legSwing, 5, 13);
   } else if (frontRiding) {
     // knees tucked forward and low onto the footpegs
     ctx.fillStyle = '#2a2a2a';
@@ -2264,6 +2283,14 @@ function drawBuildingExterior(b, camX, camY, nightFactor) {
   const sy = b.y - camY;
   nightFactor = nightFactor || 0;
 
+  // soft ground shadow cast toward the bottom-right, grounding the
+  // building instead of it looking like it's floating on the grass/sidewalk
+  const shadowGrad = ctx.createLinearGradient(sx, sy + b.h + b.wallH, sx, sy + b.h + b.wallH + 16);
+  shadowGrad.addColorStop(0, 'rgba(0,0,0,0.28)');
+  shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = shadowGrad;
+  ctx.fillRect(sx + 6, sy + b.h + b.wallH, b.w, 16);
+
   ctx.fillStyle = b.wall;
   ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
@@ -2360,6 +2387,44 @@ function drawRoads(camX, camY) {
     });
   });
 
+  // concrete slab seams - cheap, but reads immediately as poured concrete
+  // instead of a flat grey stripe
+  ctx.strokeStyle = 'rgba(0,0,0,0.15)';
+  ctx.lineWidth = 1;
+  const seamGap = 40;
+  NUMBERED_STREETS.forEach(street => {
+    freeSegments(WORLD_W, namedZones).forEach(seg => {
+      for (let sxw = seg.start; sxw < seg.end; sxw += seamGap) {
+        const sx = sxw - camX;
+        if (sx < -5 || sx > canvas.width + 5) continue;
+        ctx.beginPath();
+        ctx.moveTo(sx, street.y - SIDEWALK_W - camY);
+        ctx.lineTo(sx, street.y - camY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(sx, street.y + ROAD_W - camY);
+        ctx.lineTo(sx, street.y + ROAD_W + SIDEWALK_W - camY);
+        ctx.stroke();
+      }
+    });
+  });
+  NAMED_STREETS.forEach(street => {
+    freeSegments(WORLD_H, numberedZones).forEach(seg => {
+      for (let syw = seg.start; syw < seg.end; syw += seamGap) {
+        const sy = syw - camY;
+        if (sy < -5 || sy > canvas.height + 5) continue;
+        ctx.beginPath();
+        ctx.moveTo(street.x - SIDEWALK_W - camX, sy);
+        ctx.lineTo(street.x - camX, sy);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(street.x + ROAD_W - camX, sy);
+        ctx.lineTo(street.x + ROAD_W + SIDEWALK_W - camX, sy);
+        ctx.stroke();
+      }
+    });
+  });
+
   ctx.fillStyle = centerline;
   const dash = 30, gap = 20;
   NUMBERED_STREETS.forEach(street => {
@@ -2425,6 +2490,24 @@ function drawParkGround(camX, camY) {
   ctx.fillStyle = '#3f7538';
   ctx.fillRect(px, py, PARK.w, PARK.h);
 
+  // same hash-noise speckle as the city grass in drawOutside, so the park's
+  // lawn doesn't read as a flatter, un-textured patch next to it
+  const grassCell = 24;
+  const gStartX = Math.floor(PARK.x / grassCell) * grassCell;
+  const gStartY = Math.floor(PARK.y / grassCell) * grassCell;
+  for (let wx = gStartX; wx < PARK.x + PARK.w; wx += grassCell) {
+    for (let wy = gStartY; wy < PARK.y + PARK.h; wy += grassCell) {
+      const n = hashNoise(wx, wy);
+      if (n > 0.82) {
+        ctx.fillStyle = 'rgba(20,50,15,0.15)';
+        ctx.fillRect(wx - camX + (n * grassCell) % grassCell, wy - camY + (hashNoise(wy, wx) * grassCell) % grassCell, 3, 7);
+      } else if (n < 0.1) {
+        ctx.fillStyle = 'rgba(140,190,110,0.12)';
+        ctx.fillRect(wx - camX + (n * grassCell) % grassCell, wy - camY + (hashNoise(wy, wx) * grassCell) % grassCell, 3, 7);
+      }
+    }
+  }
+
   const b = PARK_PATH_BAND;
   ctx.fillStyle = '#c8b585';
 
@@ -2440,13 +2523,37 @@ function drawParkGround(camX, camY) {
   ctx.fillRect(px + ring.x, py + ring.y, b, ring.h);
   ctx.fillRect(px + ring.x + ring.w - b, py + ring.y, b, ring.h);
 
-  ctx.fillStyle = '#3a6fa0';
+  const pondCx = px + PARK_POND.x + PARK_POND.w/2, pondCy = py + PARK_POND.y + PARK_POND.h/2;
+  const pondRx = PARK_POND.w/2, pondRy = PARK_POND.h/2;
+  const pondGrad = ctx.createRadialGradient(pondCx - pondRx*0.3, pondCy - pondRy*0.35, 4, pondCx, pondCy, Math.max(pondRx, pondRy));
+  pondGrad.addColorStop(0, '#5b93c2');
+  pondGrad.addColorStop(0.55, '#3a6fa0');
+  pondGrad.addColorStop(1, '#2c5580');
+  ctx.fillStyle = pondGrad;
   ctx.beginPath();
-  ctx.ellipse(px + PARK_POND.x + PARK_POND.w/2, py + PARK_POND.y + PARK_POND.h/2, PARK_POND.w/2, PARK_POND.h/2, 0, 0, Math.PI*2);
+  ctx.ellipse(pondCx, pondCy, pondRx, pondRy, 0, 0, Math.PI*2);
   ctx.fill();
   ctx.strokeStyle = '#2a5580';
   ctx.lineWidth = 3;
   ctx.stroke();
+
+  // slow drifting shimmer streaks - a couple of soft light bands that ease
+  // back and forth across the surface so the water doesn't sit dead flat
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(pondCx, pondCy, pondRx, pondRy, 0, 0, Math.PI*2);
+  ctx.clip();
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 3; i++) {
+    const phase = t * 0.25 + i * 2.1;
+    const sx = pondCx + Math.sin(phase) * pondRx * 0.6;
+    const sy = pondCy + Math.cos(phase * 0.7) * pondRy * 0.5;
+    ctx.fillStyle = `rgba(255,255,255,${0.08 + 0.05 * Math.sin(phase * 1.3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, pondRx * 0.35, pondRy * 0.12, phase * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
 
   PARK_BUSHES.forEach(bu => {
     ctx.fillStyle = '#2f5a2a';
@@ -2480,6 +2587,13 @@ function drawTree(px, py, camX, camY) {
   ctx.fillStyle = shadeColor('#3d6e37', v);
   ctx.beginPath();
   ctx.arc(-6, -32, 13, 0, Math.PI*2);
+  ctx.fill();
+
+  // small sunlit-side highlight so the canopy reads as rounded rather
+  // than a single flat blob
+  ctx.fillStyle = shadeColor('#3d6e37', v + 30);
+  ctx.beginPath();
+  ctx.ellipse(-10, -38, 6, 4, -0.4, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -2744,7 +2858,7 @@ function drawOutside() {
       const c = d.obj;
       const isDown = c.knockedDownUntil && performance.now() < c.knockedDownUntil;
       drawBloodSpot(c, camX, camY);
-      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor, knockedDown: isDown });
+      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor, knockedDown: isDown, moving: !!c.path });
     } else if (d.type === 'tree') {
       drawTree(PARK.x + d.obj.x, PARK.y + d.obj.y, camX, camY);
     } else if (d.type === 'citytree') {
@@ -2755,7 +2869,7 @@ function drawOutside() {
       const w = d.obj;
       const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
       drawBloodSpot(w, camX - PARK.x, camY - PARK.y);
-      drawDude(PARK.x + w.x - camX, PARK.y + w.y - camY, w.color, null, { gender: w.gender, hairColor: w.hairColor, hairstyle: w.hairstyle, skinTone: w.skinTone, skirt: w.skirt, skirtColor: w.skirtColor, knockedDown: isDown });
+      drawDude(PARK.x + w.x - camX, PARK.y + w.y - camY, w.color, null, { gender: w.gender, hairColor: w.hairColor, hairstyle: w.hairstyle, skinTone: w.skinTone, skirt: w.skirt, skirtColor: w.skirtColor, knockedDown: isDown, moving: Math.hypot(w.targetX - w.x, w.targetY - w.y) > 2 });
     } else if (d.type === 'parkedmoto') {
       drawMotorcycle(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
     } else if (d.type === 'parkedcar') {
@@ -2772,7 +2886,7 @@ function drawOutside() {
       } else {
         if (player.onMotorcycle) drawMotorcycle(px, py, player.facing, player.motoColor);
         drawBloodSpot(player, camX, camY);
-        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil });
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil, moving: player.moving });
       }
     }
   });
@@ -2793,6 +2907,17 @@ function drawOutside() {
     ctx.fillStyle = `rgba(10,15,45,${(nightFactor * 0.6).toFixed(3)})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   }
+
+  // gentle vignette - gives the scene a bit of depth/focus instead of
+  // reading as a flat, evenly-lit sheet all the way to the screen edges
+  const vignette = ctx.createRadialGradient(
+    canvas.width/2, canvas.height/2, Math.min(canvas.width, canvas.height) * 0.35,
+    canvas.width/2, canvas.height/2, Math.max(canvas.width, canvas.height) * 0.7
+  );
+  vignette.addColorStop(0, 'rgba(0,0,0,0)');
+  vignette.addColorStop(1, 'rgba(0,0,0,0.22)');
+  ctx.fillStyle = vignette;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   if (motorcycleParked && !player.onMotorcycle) {
     const mdist = Math.hypot(
@@ -2927,11 +3052,11 @@ function drawInterior() {
     if (d.type === 'npc') {
       const isDown = d.obj.knockedDownUntil && performance.now() < d.obj.knockedDownUntil;
       drawBloodSpot(d.obj, -rx, -ry);
-      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, knockedDown: isDown });
+      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, knockedDown: isDown, moving: Math.hypot(d.obj.targetX - d.obj.x, d.obj.targetY - d.obj.y) > 2 });
     } else if (d.type === 'displaybike') {
       drawMotorcycle(rx + d.obj.x, ry + d.obj.y, d.obj.facing, d.obj.color);
     } else {
-      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil });
+      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, moving: player.moving });
     }
   });
 
