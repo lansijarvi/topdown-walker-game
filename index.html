@@ -1174,6 +1174,31 @@ function rectsOverlap(a, b) {
          a.y + a.h > b.y;
 }
 
+// rounded-rect + drop-shadow HUD panel, reused everywhere the game used to
+// draw a flat ctx.fillRect box (cash, ammo, dialogue, item slots, etc.)
+function drawPanel(x, y, w, h, fillTop, fillBottom, strokeStyle, radius) {
+  radius = radius || 8;
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,0.5)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetY = 2;
+  ctx.beginPath();
+  ctx.roundRect(x, y, w, h, radius);
+  const grad = ctx.createLinearGradient(x, y, x, y + h);
+  grad.addColorStop(0, fillTop);
+  grad.addColorStop(1, fillBottom);
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.restore();
+  if (strokeStyle) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, w, h, radius);
+    ctx.strokeStyle = strokeStyle;
+    ctx.lineWidth = 1.5;
+    ctx.stroke();
+  }
+}
+
 function enterBuilding(b) {
   if (player.onMotorcycle) {
     motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
@@ -1693,12 +1718,37 @@ function update(timestamp, dt) {
   }
 }
 
+// deterministic pseudo-random 0..1 from a pair of numbers (usually world
+// coordinates) - same inputs always give the same output, so texture speckle
+// stays put instead of flickering like it would with Math.random() per frame
+function hashNoise(x, y) {
+  const n = Math.sin(x * 127.1 + y * 311.7) * 43758.5453;
+  return n - Math.floor(n);
+}
+
+// lightens (positive percent) or darkens (negative) a hex color, used to
+// build simple top-lit gradients instead of flat single-color shapes
+function shadeColor(hex, percent) {
+  hex = hex.replace('#', '');
+  if (hex.length === 3) hex = hex.split('').map(c => c + c).join('');
+  const num = parseInt(hex, 16);
+  const amt = Math.round(255 * percent / 100);
+  const r = Math.max(0, Math.min(255, (num >> 16) + amt));
+  const g = Math.max(0, Math.min(255, ((num >> 8) & 0xff) + amt));
+  const b = Math.max(0, Math.min(255, (num & 0xff) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
 function drawDude(cx, cy, color, label, opts) {
   opts = opts || {};
   const facing = opts.facing || 'down';
   const gender = opts.gender || 'm';
   const hairColor = opts.hairColor || '#3a2a1a';
   const scale = opts.kid ? 0.62 : opts.big ? 1.3 : 1;
+  const baseColor = color || '#3a6fd8';
+  const bodyGrad = ctx.createLinearGradient(0, -35, 0, 0);
+  bodyGrad.addColorStop(0, shadeColor(baseColor, 22));
+  bodyGrad.addColorStop(1, shadeColor(baseColor, -18));
 
   ctx.save();
   ctx.translate(cx, cy);
@@ -1750,7 +1800,7 @@ function drawDude(cx, cy, color, label, opts) {
     ctx.fill();
   }
 
-  ctx.fillStyle = color || '#3a6fd8';
+  ctx.fillStyle = bodyGrad;
   if (frontRiding) {
     // short forward-reaching arms, ending right at the handlebar grip
     ctx.fillRect(-11, -21, 5, 9);
@@ -1774,7 +1824,7 @@ function drawDude(cx, cy, color, label, opts) {
     ctx.fillRect(9, -29, 4, 15);
   }
 
-  ctx.fillStyle = color || '#3a6fd8';
+  ctx.fillStyle = bodyGrad;
   if (frontRiding) {
     // short, compact torso hunched over the tank
     ctx.beginPath();
@@ -1850,10 +1900,17 @@ function drawDude(cx, cy, color, label, opts) {
   const headY = sideRiding ? -18 : frontRiding ? -26 : -39;
   const headR = opts.riding ? 8 : 10;
 
-  ctx.fillStyle = opts.skinTone || '#f0c090';
+  const skinBase = opts.skinTone || '#f0c090';
+  const headGrad = ctx.createRadialGradient(headX - 3, headY - 3, 1, headX, headY, headR);
+  headGrad.addColorStop(0, shadeColor(skinBase, 18));
+  headGrad.addColorStop(1, shadeColor(skinBase, -12));
+  ctx.fillStyle = headGrad;
   ctx.beginPath();
   ctx.arc(headX, headY, headR, 0, Math.PI * 2);
   ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.lineWidth = 0.8;
+  ctx.stroke();
 
   const hairstyle = opts.hairstyle || 'square';
   if (hairstyle !== 'bald') {
@@ -2202,9 +2259,10 @@ function randomPersonStyle() {
   };
 }
 
-function drawBuildingExterior(b, camX, camY) {
+function drawBuildingExterior(b, camX, camY, nightFactor) {
   const sx = b.x - camX;
   const sy = b.y - camY;
+  nightFactor = nightFactor || 0;
 
   ctx.fillStyle = b.wall;
   ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
@@ -2212,11 +2270,19 @@ function drawBuildingExterior(b, camX, camY) {
   ctx.lineWidth = 2;
   ctx.strokeRect(sx, sy, b.w, b.h + b.wallH);
 
-  ctx.fillStyle = 'rgba(255, 240, 180, 0.5)';
+  // windows glow warmer and brighter as night falls, with a soft halo once
+  // it's dark enough to actually read as "lit up" rather than just yellow
   const winW = 14, winH = 18;
+  ctx.save();
+  if (nightFactor > 0.3) {
+    ctx.shadowColor = 'rgba(255,220,140,0.8)';
+    ctx.shadowBlur = 6 + nightFactor * 8;
+  }
+  ctx.fillStyle = `rgba(255, 235, 170, ${(0.5 + nightFactor * 0.45).toFixed(3)})`;
   for (let wx = sx + 16; wx < sx + b.w - 16; wx += winW + 20) {
     ctx.fillRect(wx, sy + b.h + 14, winW, winH);
   }
+  ctx.restore();
 
   const dz = b.doorZone;
   ctx.fillStyle = '#2a1f18';
@@ -2269,6 +2335,15 @@ function drawRoads(camX, camY) {
   NAMED_STREETS.forEach(street => {
     ctx.fillStyle = asphalt;
     ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, WORLD_H);
+  });
+
+  ctx.fillStyle = 'rgba(0,0,0,0.1)';
+  ROAD_WEAR_SPOTS.forEach(spot => {
+    const sx = spot.x - camX, sy = spot.y - camY;
+    if (sx < -30 || sx > canvas.width + 30 || sy < -30 || sy > canvas.height + 30) return;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, spot.r, spot.r * 0.5, 0, 0, Math.PI * 2);
+    ctx.fill();
   });
 
   ctx.fillStyle = sidewalk;
@@ -2387,6 +2462,9 @@ function drawParkGround(camX, camY) {
 
 function drawTree(px, py, camX, camY) {
   const x = px - camX, y = py - camY;
+  // slight per-tree color variation, deterministic from position, so a
+  // whole forest of trees doesn't read as identical copy-pasted clones
+  const v = (hashNoise(px, py) - 0.5) * 24;
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
@@ -2395,11 +2473,11 @@ function drawTree(px, py, camX, camY) {
   ctx.fill();
   ctx.fillStyle = '#6b4a2a';
   ctx.fillRect(-4, -10, 8, 16);
-  ctx.fillStyle = '#2f5a2a';
+  ctx.fillStyle = shadeColor('#2f5a2a', v);
   ctx.beginPath();
   ctx.arc(0, -26, 20, 0, Math.PI*2);
   ctx.fill();
-  ctx.fillStyle = '#3d6e37';
+  ctx.fillStyle = shadeColor('#3d6e37', v);
   ctx.beginPath();
   ctx.arc(-6, -32, 13, 0, Math.PI*2);
   ctx.fill();
@@ -2408,6 +2486,7 @@ function drawTree(px, py, camX, camY) {
 
 function drawPineTree(px, py, camX, camY) {
   const x = px - camX, y = py - camY;
+  const v = (hashNoise(px, py) - 0.5) * 24;
   ctx.save();
   ctx.translate(x, y);
 
@@ -2419,11 +2498,11 @@ function drawPineTree(px, py, camX, camY) {
   ctx.fillStyle = '#5a3a20';
   ctx.fillRect(-3, -10, 6, 16);
 
-  ctx.fillStyle = '#26502a';
+  ctx.fillStyle = shadeColor('#26502a', v);
   ctx.beginPath(); ctx.moveTo(0, -50); ctx.lineTo(-16, -26); ctx.lineTo(16, -26); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#316232';
+  ctx.fillStyle = shadeColor('#316232', v);
   ctx.beginPath(); ctx.moveTo(0, -38); ctx.lineTo(-14, -16); ctx.lineTo(14, -16); ctx.closePath(); ctx.fill();
-  ctx.fillStyle = '#3d7440';
+  ctx.fillStyle = shadeColor('#3d7440', v);
   ctx.beginPath(); ctx.moveTo(0, -26); ctx.lineTo(-11, -6); ctx.lineTo(11, -6); ctx.closePath(); ctx.fill();
 
   ctx.restore();
@@ -2438,6 +2517,21 @@ const CITY_TREES = [
   {"x":2082,"y":2090},{"x":1077,"y":2077},{"x":2932,"y":2092}
 ].map((t, i) => ({ ...t, pine: i % 3 === 0 }));
 const cityTreeObstacles = CITY_TREES.map(t => ({ x: t.x - 6, y: t.y - 6, w: 12, h: 12 }));
+
+// subtle asphalt wear patches, computed once up front rather than every
+// frame - a fixed list of dark blotches scattered along each street, same
+// idea as CITY_TREES, so the road doesn't read as one flat color block
+const ROAD_WEAR_SPOTS = [];
+NUMBERED_STREETS.forEach(s => {
+  for (let i = 0; i < 50; i++) {
+    ROAD_WEAR_SPOTS.push({ x: Math.random() * WORLD_W, y: s.y + Math.random() * ROAD_W, r: 6 + Math.random() * 12 });
+  }
+});
+NAMED_STREETS.forEach(s => {
+  for (let i = 0; i < 50; i++) {
+    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: Math.random() * WORLD_H, r: 6 + Math.random() * 12 });
+  }
+});
 
 // right-hand-traffic lane for a car on a street, given its direction:
 // heading east -> south lane, west -> north lane; heading south -> west
@@ -2497,6 +2591,16 @@ function getLightPhase(timestamp) {
   if (t < LIGHT_GREEN_MS + LIGHT_YELLOW_MS) return { h: 'yellow', v: 'red' };
   if (t < LIGHT_GREEN_MS + LIGHT_YELLOW_MS + LIGHT_GREEN_MS) return { h: 'red', v: 'green' };
   return { h: 'red', v: 'yellow' };
+}
+
+// a slow ambient day/night cycle purely for atmosphere - smoothly eases
+// between 0 (full daylight) and 1 (deep night) rather than snapping, so
+// windows/headlights glow brighter and the whole scene cools down as it
+// "sets" and warms back up as it "rises"
+const DAY_NIGHT_CYCLE_MS = 5 * 60 * 1000;
+function getNightFactor(timestamp) {
+  const t = (timestamp % DAY_NIGHT_CYCLE_MS) / DAY_NIGHT_CYCLE_MS;
+  return (1 - Math.cos(t * Math.PI * 2)) / 2;
 }
 
 const TRAFFIC_LIGHTS = [];
@@ -2576,6 +2680,7 @@ function drawOutside() {
   let camY = player.y + player.h / 2 - canvas.height / 2;
   camX = Math.max(0, Math.min(WORLD_W - canvas.width, camX));
   camY = Math.max(0, Math.min(WORLD_H - canvas.height, camY));
+  const nightFactor = getNightFactor(performance.now());
 
   ctx.fillStyle = '#4a7c3c';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -2588,6 +2693,25 @@ function drawOutside() {
   }
   for (let gy = -((camY) % gridSize); gy < canvas.height; gy += gridSize) {
     ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+  }
+
+  // grass speckle - tied to world coordinates (not screen ones) via a
+  // deterministic hash, so the texture stays put under the camera instead
+  // of swimming or flickering frame to frame
+  const grassCell = 24;
+  const gStartX = Math.floor(camX / grassCell) * grassCell;
+  const gStartY = Math.floor(camY / grassCell) * grassCell;
+  for (let wx = gStartX; wx < camX + canvas.width; wx += grassCell) {
+    for (let wy = gStartY; wy < camY + canvas.height; wy += grassCell) {
+      const n = hashNoise(wx, wy);
+      if (n > 0.82) {
+        ctx.fillStyle = 'rgba(20,50,15,0.15)';
+        ctx.fillRect(wx - camX + (n * grassCell) % grassCell, wy - camY + (hashNoise(wy, wx) * grassCell) % grassCell, 3, 7);
+      } else if (n < 0.1) {
+        ctx.fillStyle = 'rgba(140,190,110,0.12)';
+        ctx.fillRect(wx - camX + (n * grassCell) % grassCell, wy - camY + (hashNoise(wy, wx) * grassCell) % grassCell, 3, 7);
+      }
+    }
   }
 
   drawRoads(camX, camY);
@@ -2615,7 +2739,7 @@ function drawOutside() {
 
   drawables.forEach(d => {
     if (d.type === 'building') {
-      drawBuildingExterior(d.obj, camX, camY);
+      drawBuildingExterior(d.obj, camX, camY, nightFactor);
     } else if (d.type === 'citizen') {
       const c = d.obj;
       const isDown = c.knockedDownUntil && performance.now() < c.knockedDownUntil;
@@ -2664,6 +2788,11 @@ function drawOutside() {
     ctx.fill();
     ctx.restore();
   });
+
+  if (nightFactor > 0.02) {
+    ctx.fillStyle = `rgba(10,15,45,${(nightFactor * 0.6).toFixed(3)})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
 
   if (motorcycleParked && !player.onMotorcycle) {
     const mdist = Math.hypot(
@@ -2827,8 +2956,7 @@ function drawDialogueUI() {
     ctx.textAlign = 'center';
     const hint = '[E] to talk';
     const hw = ctx.measureText(hint).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.6)';
-    ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+    drawPanel(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24, 'rgba(30,30,30,0.75)', 'rgba(5,5,5,0.75)', 'rgba(255,255,255,0.25)', 6);
     ctx.fillStyle = '#fff';
     ctx.fillText(hint, canvas.width/2, canvas.height - 23);
   }
@@ -2838,11 +2966,7 @@ function drawDialogueUI() {
     const options = node.options ? (typeof node.options === 'function' ? node.options(player) : node.options) : null;
     const boxH = 90;
 
-    ctx.fillStyle = 'rgba(10,10,10,0.9)';
-    ctx.fillRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
-    ctx.strokeStyle = '#fff';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(20, canvas.height - boxH - 20, canvas.width - 40, boxH);
+    drawPanel(20, canvas.height - boxH - 20, canvas.width - 40, boxH, 'rgba(28,28,32,0.94)', 'rgba(8,8,10,0.94)', 'rgba(255,255,255,0.4)', 10);
 
     const speaker = node.speaker === 'npc' ? nearbyNPC.name : 'You';
     ctx.textAlign = 'left';
@@ -2874,11 +2998,7 @@ function drawHUD() {
   ctx.textAlign = 'right';
   const cashText = `$${player.money}`;
   const ctw = ctx.measureText(cashText).width;
-  ctx.fillStyle = 'rgba(0,0,0,0.55)';
-  ctx.fillRect(canvas.width - ctw - 34, 10, ctw + 24, 30);
-  ctx.strokeStyle = 'rgba(255,255,255,0.3)';
-  ctx.lineWidth = 1;
-  ctx.strokeRect(canvas.width - ctw - 34, 10, ctw + 24, 30);
+  drawPanel(canvas.width - ctw - 34, 10, ctw + 24, 30, 'rgba(30,30,30,0.7)', 'rgba(5,5,5,0.7)', 'rgba(255,255,255,0.3)', 8);
   ctx.fillStyle = '#7fffb0';
   ctx.fillText(cashText, canvas.width - 22, 31);
 
@@ -2891,8 +3011,7 @@ function drawHUD() {
     ctx.textAlign = 'center';
     const saveText = 'Saved';
     const stw = ctx.measureText(saveText).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.5)';
-    ctx.fillRect(canvas.width / 2 - stw / 2 - 8, 10, stw + 16, 20);
+    drawPanel(canvas.width / 2 - stw / 2 - 8, 10, stw + 16, 20, 'rgba(30,30,30,0.65)', 'rgba(5,5,5,0.65)', null, 6);
     ctx.fillStyle = '#7fffb0';
     ctx.fillText(saveText, canvas.width / 2, 24);
     ctx.restore();
@@ -2903,11 +3022,7 @@ function drawHUD() {
     const ammoText = `${player.ammoInMag}/${MAG_SIZE}  •  ${player.spareMags} mag${player.spareMags === 1 ? '' : 's'}`;
     ctx.font = 'bold 14px monospace';
     const atw = ctx.measureText(ammoText).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(canvas.width - atw - 30, 46, atw + 20, 24);
-    ctx.strokeStyle = flashEmpty ? '#ff6b6b' : 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 1;
-    ctx.strokeRect(canvas.width - atw - 30, 46, atw + 20, 24);
+    drawPanel(canvas.width - atw - 30, 46, atw + 20, 24, 'rgba(30,30,30,0.7)', 'rgba(5,5,5,0.7)', flashEmpty ? '#ff6b6b' : 'rgba(255,255,255,0.3)', 7);
     ctx.fillStyle = flashEmpty ? '#ff6b6b' : (player.ammoInMag === 0 ? '#ff9f7f' : '#ffd27f');
     ctx.fillText(ammoText, canvas.width - 20, 63);
   }
@@ -2945,11 +3060,10 @@ function drawHUD() {
   let sx = 14;
   const sy = canvas.height - slotH - 14;
   items.forEach(item => {
-    ctx.fillStyle = item.active ? 'rgba(255,210,127,0.25)' : 'rgba(0,0,0,0.55)';
-    ctx.fillRect(sx, sy, slotW, slotH);
-    ctx.strokeStyle = item.active ? '#ffd27f' : 'rgba(255,255,255,0.3)';
-    ctx.lineWidth = 1.5;
-    ctx.strokeRect(sx, sy, slotW, slotH);
+    drawPanel(sx, sy, slotW, slotH,
+      item.active ? 'rgba(255,210,127,0.3)' : 'rgba(30,30,30,0.65)',
+      item.active ? 'rgba(200,150,60,0.3)' : 'rgba(5,5,5,0.65)',
+      item.active ? '#ffd27f' : 'rgba(255,255,255,0.3)', 8);
 
     ctx.textAlign = 'center';
     ctx.font = 'bold 12px monospace';
