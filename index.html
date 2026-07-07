@@ -222,7 +222,8 @@
   /* hide touch controls on devices that clearly have a mouse/keyboard,
      show them whenever a touch capability is present */
   body:not(.touch) #dpad,
-  body:not(.touch) #actionButtons {
+  body:not(.touch) #actionButtons,
+  body:not(.touch) #wheelieBtn {
     opacity: 0.35;
   }
 
@@ -230,8 +231,18 @@
      so they don't collide with the dialogue box and its option buttons */
   body.dialogue-open #dpad,
   body.dialogue-open #actionButtons,
-  body.dialogue-open #gunControls {
+  body.dialogue-open #gunControls,
+  body.dialogue-open #wheelieBtn {
     display: none;
+  }
+
+  /* sits clear to the right of the d-pad with real breathing room, rather
+     than crowded right up against it or lost in the action button row */
+  #wheelieBtn {
+    position: fixed;
+    left: 220px;
+    bottom: 56px;
+    z-index: 10;
   }
 </style>
 </head>
@@ -268,13 +279,14 @@
   <button id="dpadRun">RUN</button>
 </div>
 
+<button class="touchBtn" id="wheelieBtn">WHEELIE<br>(X)</button>
+
 <div id="actionButtons">
   <button class="touchBtn" id="talkBtn">TALK<br>(E)</button>
   <button class="touchBtn" id="gunBtn">GUN<br>(G)</button>
   <button class="touchBtn" id="motoBtn">BIKE<br>(M)</button>
   <button class="touchBtn" id="carBtn">CAR<br>(C)</button>
   <button class="touchBtn" id="mapBtn">MAP<br>(N)</button>
-  <button class="touchBtn" id="wheelieBtn">WHEELIE<br>(X)</button>
 </div>
 
 <div id="dialogueOptions"></div>
@@ -2444,7 +2456,7 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillRect(-14, 8, 26, 3);
 
   } else {
-    if (facing === 'up') ctx.rotate(Math.PI);
+    if (facing === 'down') ctx.rotate(Math.PI);
 
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath(); ctx.ellipse(0, 3, 14, 22, 0, 0, Math.PI * 2); ctx.fill();
