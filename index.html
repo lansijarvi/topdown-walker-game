@@ -1035,7 +1035,24 @@ const buildings = [
   ]},
   {x: 3460, y: 700, w: 180, h: 100, wallH: 80, roof: '#5a5a5a', wall: '#454545', name: 'Jail', floor: '#3a3a3a', npcs: [
     {name:'Guard Greta', color:'#4a4a5a', dialogue: jailTree, big: true}
-  ]}
+  ]},
+
+  // --- south of 1st St - fills the empty block between 1st and 2nd St ---
+  {x: 40, y: 520, w: 180, h: 65, wallH: 45, roof: '#5f7a9a', wall: '#3f5570', name: 'Laundromat', floor: '#e8e8e0', npcs: [{name:'Attendant Amy', color:'#c2905f'}]},
+  {x: 560, y: 520, w: 280, h: 65, wallH: 45, roof: '#c28a5f', wall: '#8f5f3a', name: 'Bakery', floor: '#e8d8c0', npcs: [{name:'Baker Belle', color:'#c2905f'}, {name:'Baker Ben', color:'#5f8fc2'}]},
+  {x: 1030, y: 520, w: 180, h: 65, wallH: 45, roof: '#6a5f9a', wall: '#453a70', name: 'Bookstore', floor: '#3a2f22', npcs: [{name:'Clerk Cora', color:'#c25f8f'}]},
+  {x: 1290, y: 520, w: 170, h: 65, wallH: 45, roof: '#5f9a6a', wall: '#3a7045', name: 'Bike Shop', floor: '#3a3a30', npcs: [{name:'Mechanic Mo', color:'#8f8f5f'}]},
+  {x: 1540, y: 520, w: 300, h: 65, wallH: 45, roof: '#9a9a5f', wall: '#70703a', name: 'Bank', floor: '#d8d0b8', npcs: [{name:'Teller Tanya', color:'#5f8fc2'}, {name:'Guard Gordon', color:'#3a3a3a', gender:'m', hairstyle:'square', big:true}]},
+  {x: 2050, y: 520, w: 280, h: 65, wallH: 45, roof: '#c25f5f', wall: '#8f3a3a', name: 'Diner', floor: '#e0d8c8', npcs: [{name:'Waitress Wendy', color:'#c2c25f'}, {name:'Cook Carl', color:'#c25f5f'}]},
+  {x: 2560, y: 520, w: 220, h: 65, wallH: 45, roof: '#5f9ac2', wall: '#3a708f', name: 'Arcade', floor: '#2a2a3a', npcs: [{name:'Arcade Al', color:'#c2905f'}]},
+  {x: 2900, y: 520, w: 220, h: 65, wallH: 45, roof: '#7a7a7a', wall: '#505050', name: 'Locksmith', floor: '#3a3a3a', npcs: [{name:'Locksmith Lou', color:'#8f8f5f'}]},
+
+  // --- flanking the park to the east/west - fills the huge gap between 2nd and 3rd St ---
+  {x: 40, y: 1050, w: 180, h: 65, wallH: 45, roof: '#9a5f5f', wall: '#703a3a', name: 'Karate Dojo', floor: '#e8e0d0', npcs: [{name:'Sensei Sam', color:'#3a3a3a', gender:'m', hairstyle:'bald', big:true}]},
+  {x: 560, y: 1050, w: 280, h: 65, wallH: 45, roof: '#5f7a5f', wall: '#3a503a', name: 'Library', floor: '#4a3f33', npcs: [{name:'Librarian Lena', color:'#c2905f'}]},
+  {x: 2610, y: 1050, w: 170, h: 65, wallH: 45, roof: '#c2905f', wall: '#8f5f3a', name: 'School', floor: '#e8e8d8', npcs: [{name:'Teacher Tess', color:'#5f8fc2'}]},
+  {x: 2870, y: 1050, w: 220, h: 65, wallH: 45, roof: '#c25f5f', wall: '#8f3a3a', name: 'Fire Station', floor: '#3a3a3a', npcs: [{name:'Firefighter Finn', color:'#c25f5f', gender:'m', big:true}]},
+  {x: 3150, y: 1050, w: 200, h: 65, wallH: 45, roof: '#8a8a9a', wall: '#5f5f70', name: 'Church', floor: '#d8d0c0', npcs: [{name:'Father Fred', color:'#2a2a2a', gender:'m'}]}
 ];
 
 buildings.forEach(b => b.npcs.forEach(n => {
@@ -2553,10 +2570,25 @@ const NIGHTLIFE_SIGN_COLORS = {
   'Casino': '#c86bff'
 };
 
-function drawBuildingExterior(b, camX, camY, nightFactor) {
+// true if the player is standing where this building's tall roof+wall
+// sprite would otherwise be drawn on top of them (roughly: in front of its
+// door, within its width) - used to fade the building so walking up to an
+// entrance doesn't hide your own character behind it
+function isPlayerBehindBuilding(b) {
+  const ppx = player.x + player.w / 2;
+  const ppy = player.y + player.h;
+  const withinX = ppx > b.x + 4 && ppx < b.x + b.w - 4;
+  const withinFront = ppy >= b.y + b.h - 10 && ppy <= b.y + b.h + b.wallH + 24;
+  return withinX && withinFront;
+}
+
+function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   const sx = b.x - camX;
   const sy = b.y - camY;
   nightFactor = nightFactor || 0;
+
+  ctx.save();
+  if (faded) ctx.globalAlpha = 0.45;
 
   // soft ground shadow cast toward the bottom-right, grounding the
   // building instead of it looking like it's floating on the grass/sidewalk
@@ -2627,6 +2659,7 @@ function drawBuildingExterior(b, camX, camY, nightFactor) {
       ctx.fillText(b.name, labelX, labelY);
     }
   }
+  ctx.restore();
 }
 
 function freeSegments(totalLen, zones) {
@@ -3200,7 +3233,7 @@ function drawOutside() {
 
   drawables.forEach(d => {
     if (d.type === 'building') {
-      drawBuildingExterior(d.obj, camX, camY, nightFactor);
+      drawBuildingExterior(d.obj, camX, camY, nightFactor, isPlayerBehindBuilding(d.obj));
     } else if (d.type === 'citizen') {
       const c = d.obj;
       const isDown = c.knockedDownUntil && performance.now() < c.knockedDownUntil;
