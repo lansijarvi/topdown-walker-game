@@ -2656,7 +2656,6 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   const sy = f.y - camY;
   nightFactor = nightFactor || 0;
   const side = b.doorSide;
-  const horizontal = side === 'south' || side === 'north';
 
   // yard + connecting path between the sidewalk and the door, drawn first
   // so the building sits on top of it - this is the "little space from the
@@ -2690,26 +2689,11 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   ctx.lineWidth = 2;
   ctx.strokeRect(sx, sy, f.w, f.h);
 
-  // roofRect is the taller/deeper part of the box away from the door;
-  // wallRect is the thinner strip against the door's edge that carries the
-  // windows and doorway - which edge that strip sits on depends on doorSide
-  let roofRect, wallRect;
-  if (side === 'south') {
-    roofRect = { x: sx, y: sy, w: f.w, h: b.h };
-    wallRect = { x: sx, y: sy + b.h, w: f.w, h: f.h - b.h };
-  } else if (side === 'north') {
-    wallRect = { x: sx, y: sy, w: f.w, h: f.h - b.h };
-    roofRect = { x: sx, y: sy + wallRect.h, w: f.w, h: b.h };
-  } else if (side === 'east') {
-    roofRect = { x: sx, y: sy, w: b.w, h: f.h };
-    wallRect = { x: sx + b.w, y: sy, w: f.w - b.w, h: f.h };
-  } else {
-    wallRect = { x: sx, y: sy, w: f.w - b.w, h: f.h };
-    roofRect = { x: sx + wallRect.w, y: sy, w: b.w, h: f.h };
-  }
-
-  // windows glow warmer and brighter as night falls, with a soft halo once
-  // it's dark enough to actually read as "lit up" rather than just yellow
+  // every building keeps the same silhouette - roof on top, a window band
+  // along the bottom - no matter which edge the actual door is on, so a
+  // building fronting a side street still reads as a normal building
+  // instead of looking like two boxes glued together
+  const roofH = Math.min(b.h, f.h - 24);
   const winW = 14, winH = 18;
   ctx.save();
   if (nightFactor > 0.3) {
@@ -2717,41 +2701,24 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
     ctx.shadowBlur = 6 + nightFactor * 8;
   }
   ctx.fillStyle = `rgba(255, 235, 170, ${(0.5 + nightFactor * 0.45).toFixed(3)})`;
-  if (horizontal) {
-    const wy = side === 'south' ? wallRect.y + 14 : wallRect.y + wallRect.h - 14 - winH;
-    for (let wx = sx + 16; wx < sx + f.w - 16; wx += winW + 20) ctx.fillRect(wx, wy, winW, winH);
-  } else {
-    const wx = wallRect.x + (wallRect.w - winW) / 2;
-    for (let wy = sy + 16; wy < sy + f.h - 16; wy += winH + 20) ctx.fillRect(wx, wy, winW, winH);
-  }
+  for (let wx = sx + 16; wx < sx + f.w - 16; wx += winW + 20) ctx.fillRect(wx, sy + roofH + 14, winW, winH);
   ctx.restore();
 
-  // door, with a slightly recessed alcove and a small stoop where it meets
-  // the path, so the entrance reads as an actual indentation in the wall
-  const dz = b.doorZone;
-  const doorRect = horizontal
-    ? { x: dz.x - camX, y: wallRect.y, w: dz.w, h: wallRect.h }
-    : { x: wallRect.x, y: dz.y - camY, w: wallRect.w, h: dz.h };
-  ctx.fillStyle = shadeColor(b.wall, -20);
-  if (horizontal) ctx.fillRect(doorRect.x - 4, doorRect.y, doorRect.w + 8, doorRect.h);
-  else ctx.fillRect(doorRect.x, doorRect.y - 4, doorRect.w, doorRect.h + 8);
-  ctx.fillStyle = '#2a1f18';
-  ctx.fillRect(doorRect.x, doorRect.y, doorRect.w, doorRect.h);
-  ctx.fillStyle = 'rgba(200,190,170,0.5)';
-  if (horizontal) {
-    const matY = side === 'south' ? doorRect.y + doorRect.h - 4 : doorRect.y;
-    ctx.fillRect(doorRect.x - 2, matY, doorRect.w + 4, 4);
-  } else {
-    const matX = side === 'east' ? doorRect.x + doorRect.w - 4 : doorRect.x;
-    ctx.fillRect(matX, doorRect.y - 2, 4, doorRect.h + 4);
-  }
-
   ctx.fillStyle = b.roof;
-  ctx.fillRect(roofRect.x, roofRect.y, roofRect.w, roofRect.h);
+  ctx.fillRect(sx, sy, f.w, roofH);
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.strokeRect(roofRect.x, roofRect.y, roofRect.w, roofRect.h);
+  ctx.strokeRect(sx, sy, f.w, roofH);
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
   ctx.fillRect(sx, sy, f.w, 8);
+
+  // the actual functional door - just a small dark slit on whichever edge
+  // faces the street, rather than a full separate door structure
+  const dz = b.doorZone;
+  ctx.fillStyle = '#1c140f';
+  if (side === 'south') ctx.fillRect(dz.x - camX, sy + f.h - 6, dz.w, 6);
+  else if (side === 'north') ctx.fillRect(dz.x - camX, sy, dz.w, 6);
+  else if (side === 'east') ctx.fillRect(sx + f.w - 6, dz.y - camY, 6, dz.h);
+  else ctx.fillRect(sx, dz.y - camY, 6, dz.h);
 
   if (b.name) {
     const labelX = sx + f.w / 2;
