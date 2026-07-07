@@ -2423,47 +2423,73 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.ellipse(0, 15, 34, 8, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // wheels
-    ctx.fillStyle = '#0f0f0f';
-    ctx.fillRect(-24, 9, 10, 12);
-    ctx.fillRect(12, 9, 10, 12);
-
-    // main body - a plain rounded box instead of a tapered wedge
+    // fender bulges tuck the wheels into the body instead of them just
+    // being bolted under a flat box
     ctx.fillStyle = bodyColor;
+    ctx.beginPath(); ctx.ellipse(-19, 9, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(17, 9, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
+
+    // low rounded chassis
     ctx.beginPath();
-    ctx.roundRect(-30, -12, 60, 24, 5);
+    ctx.roundRect(-30, -6, 60, 18, 6);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // cabin/windshield band, inset flush in the top of the body rather
-    // than poking up above it
+    // rounded cabin bump on top, set back slightly from the front so the
+    // hood/windshield reads as sloped rather than a flat box
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath();
+    ctx.roundRect(-15, -20, 30, 15, [9, 7, 2, 2]);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+    ctx.stroke();
+
+    // windshield glass, two panes split by a center pillar
     ctx.fillStyle = '#9fd0e8';
     ctx.beginPath();
-    ctx.roundRect(-12, -12, 26, 9, 2);
+    ctx.roundRect(-11, -17, 24, 10, 4);
     ctx.fill();
     ctx.strokeStyle = '#2a2a2a';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(2, -12);
-    ctx.lineTo(2, -3);
+    ctx.moveTo(3, -17);
+    ctx.lineTo(3, -7);
     ctx.stroke();
+
+    // door handle
+    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-5, 1);
+    ctx.lineTo(2, 0);
+    ctx.stroke();
+
+    // round wheels with a hubcap ring, sitting mostly below the body
+    [-19, 17].forEach(wx => {
+      ctx.fillStyle = '#0f0f0f';
+      ctx.beginPath(); ctx.arc(wx, 11, 9, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c8c8c8';
+      ctx.beginPath(); ctx.arc(wx, 11, 5.5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#0f0f0f';
+      ctx.beginPath(); ctx.arc(wx, 11, 2, 0, Math.PI * 2); ctx.fill();
+    });
 
     // headlight / taillight
     ctx.fillStyle = '#ffe066';
-    ctx.beginPath(); ctx.arc(28, 2, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(28, 4, 3, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = '#c23a3a';
-    ctx.beginPath(); ctx.arc(-28, 2, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(-28, 4, 2.5, 0, Math.PI * 2); ctx.fill();
 
     if (police) {
       // black-and-white door panel plus a red/blue light bar on the roof
       ctx.fillStyle = '#1a1a1a';
-      ctx.fillRect(-14, -8, 28, 12);
+      ctx.fillRect(-14, -4, 28, 12);
       ctx.fillStyle = '#e03a3a';
-      ctx.fillRect(-3, -20, 5, 3);
+      ctx.fillRect(-3, -24, 5, 3);
       ctx.fillStyle = '#3a5fe0';
-      ctx.fillRect(2, -20, 5, 3);
+      ctx.fillRect(2, -24, 5, 3);
     }
 
   } else {
@@ -2474,12 +2500,13 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.ellipse(0, 4, 16, 26, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // wheels peeking out at the corners
-    ctx.fillStyle = '#0f0f0f';
-    ctx.fillRect(-17, -14, 6, 12);
-    ctx.fillRect(11, -14, 6, 12);
-    ctx.fillRect(-17, 8, 6, 12);
-    ctx.fillRect(11, 8, 6, 12);
+    // round wheels peeking out at the corners
+    [[-17, -8], [14, -8], [-17, 14], [14, 14]].forEach(([wx, wy]) => {
+      ctx.fillStyle = '#0f0f0f';
+      ctx.beginPath(); ctx.arc(wx, wy, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c8c8c8';
+      ctx.beginPath(); ctx.arc(wx, wy, 3.5, 0, Math.PI * 2); ctx.fill();
+    });
 
     // main body - a plain rounded box instead of a flared hexagon
     ctx.fillStyle = bodyColor;
