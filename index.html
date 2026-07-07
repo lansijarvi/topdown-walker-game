@@ -2428,35 +2428,26 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.fillRect(-24, 9, 10, 12);
     ctx.fillRect(12, 9, 10, 12);
 
-    // main body
+    // main body - a plain rounded box instead of a tapered wedge
     ctx.fillStyle = bodyColor;
     ctx.beginPath();
-    ctx.moveTo(-30, 12);
-    ctx.lineTo(-28, -2);
-    ctx.lineTo(-14, -12);
-    ctx.lineTo(14, -12);
-    ctx.lineTo(26, -2);
-    ctx.lineTo(30, 12);
-    ctx.closePath();
+    ctx.roundRect(-30, -12, 60, 24, 5);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1.5;
     ctx.stroke();
 
-    // cabin/windshield band
+    // cabin/windshield band, inset flush in the top of the body rather
+    // than poking up above it
     ctx.fillStyle = '#9fd0e8';
     ctx.beginPath();
-    ctx.moveTo(-12, -11);
-    ctx.lineTo(-6, -20);
-    ctx.lineTo(12, -20);
-    ctx.lineTo(15, -11);
-    ctx.closePath();
+    ctx.roundRect(-12, -12, 26, 9, 2);
     ctx.fill();
     ctx.strokeStyle = '#2a2a2a';
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(3, -20);
-    ctx.lineTo(1, -11);
+    ctx.moveTo(2, -12);
+    ctx.lineTo(2, -3);
     ctx.stroke();
 
     // headlight / taillight
@@ -2470,9 +2461,9 @@ function drawCar(cx, cy, facing, color, police) {
       ctx.fillStyle = '#1a1a1a';
       ctx.fillRect(-14, -8, 28, 12);
       ctx.fillStyle = '#e03a3a';
-      ctx.fillRect(-3, -24, 5, 3);
+      ctx.fillRect(-3, -20, 5, 3);
       ctx.fillStyle = '#3a5fe0';
-      ctx.fillRect(2, -24, 5, 3);
+      ctx.fillRect(2, -20, 5, 3);
     }
 
   } else {
@@ -2490,16 +2481,10 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.fillRect(-17, 8, 6, 12);
     ctx.fillRect(11, 8, 6, 12);
 
-    // main body
+    // main body - a plain rounded box instead of a flared hexagon
     ctx.fillStyle = bodyColor;
     ctx.beginPath();
-    ctx.moveTo(-14, -24);
-    ctx.lineTo(14, -24);
-    ctx.lineTo(18, -8);
-    ctx.lineTo(18, 20);
-    ctx.lineTo(-18, 20);
-    ctx.lineTo(-14, -8);
-    ctx.closePath();
+    ctx.roundRect(-16, -24, 32, 44, 5);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.lineWidth = 1.5;
