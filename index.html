@@ -2347,6 +2347,27 @@ function drawDude(cx, cy, color, label, opts) {
 // whichever direction the player is currently facing. Wheels sized up and
 // the frame stretched into more of a cruiser stance so the rider sits low
 // and forward between them instead of perched high on a compact frame.
+// a soft cone of light fanning out from a headlight in the direction
+// (dx,dy), fading to nothing - used to make the motorcycle's headlight
+// read as actually switched on rather than just a plain yellow dot
+function drawHeadlightBeam(x, y, dx, dy, len) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(Math.atan2(dy, dx));
+  const spread = 0.36;
+  const grad = ctx.createLinearGradient(0, 0, len, 0);
+  grad.addColorStop(0, 'rgba(255,240,180,0.5)');
+  grad.addColorStop(1, 'rgba(255,240,180,0)');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(len, -len * Math.tan(spread));
+  ctx.lineTo(len, len * Math.tan(spread));
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
 function drawMotorcycle(cx, cy, facing, color) {
   const frameColor = color || '#8f2e2e';
   ctx.save();
@@ -2409,9 +2430,14 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillRect(9, -15, 3, 8);
     ctx.fillRect(9, -16, 8, 3);
 
-    // headlight
+    // headlight - a glowing lens plus a soft beam so it reads as lit up
+    drawHeadlightBeam(23, -3, 1, 0, 22);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,220,140,0.9)';
+    ctx.shadowBlur = 7;
     ctx.fillStyle = '#ffe066';
     ctx.beginPath(); ctx.arc(23, -3, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
 
     // exhaust pipe running low along the far side
     ctx.fillStyle = '#888';
@@ -2443,8 +2469,14 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillStyle = '#161616';
     ctx.fillRect(-7, 3, 14, 11);
 
+    // headlight - a glowing lens plus a soft beam so it reads as lit up
+    drawHeadlightBeam(0, -19, 0, -1, 18);
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,220,140,0.9)';
+    ctx.shadowBlur = 7;
     ctx.fillStyle = '#ffe066';
     ctx.beginPath(); ctx.arc(0, -19, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
 
     // pulled-back handlebar, wider than the old straight bar
     ctx.fillStyle = '#3a3a3a';
@@ -2600,6 +2632,15 @@ function drawCar(cx, cy, facing, color, police) {
     glassGrad2.addColorStop(1, '#7fb0d0');
     ctx.fillStyle = glassGrad2;
     ctx.fillRect(-12, -20, 24, 9);
+
+    // roof panel, connected right to the back of the windshield, so the
+    // car reads as having an actual flat roof instead of just a colored
+    // box with a window near the front
+    ctx.fillStyle = shadeColor(bodyColor, 14);
+    ctx.fillRect(-13, -11, 26, 13);
+    ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(-13, -11, 26, 13);
 
     // headlights
     ctx.fillStyle = '#ffe066';
