@@ -237,7 +237,7 @@
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car.</span>
+  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car, N for the map.</span>
   <div id="nameDisplay"></div>
   <div id="infoButtons">
     <button class="infoBtn" id="newGameBtn">New Game</button>
@@ -273,6 +273,7 @@
   <button class="touchBtn" id="gunBtn">GUN<br>(G)</button>
   <button class="touchBtn" id="motoBtn">BIKE<br>(M)</button>
   <button class="touchBtn" id="carBtn">CAR<br>(C)</button>
+  <button class="touchBtn" id="mapBtn">MAP<br>(N)</button>
 </div>
 
 <div id="dialogueOptions"></div>
@@ -1261,6 +1262,7 @@ function reload() {
 }
 
 let scene = 'outside';
+let mapOpen = false;
 let currentBuilding = null;
 let nearbyNPC = null;
 let dialogueOpen = false;
@@ -1325,6 +1327,11 @@ function toggleCar() {
       startEngine('car');
     }
   }
+}
+
+function toggleMap() {
+  if (dialogueOpen || awaitingName) return;
+  mapOpen = !mapOpen;
 }
 
 function pressInteract() {
@@ -1404,6 +1411,7 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'r') reload();
   if (e.key.toLowerCase() === 'm') toggleMotorcycle();
   if (e.key.toLowerCase() === 'c') toggleCar();
+  if (e.key.toLowerCase() === 'n') toggleMap();
 });
 
 window.addEventListener('keydown', e => {
@@ -1633,7 +1641,7 @@ function resolveBulletHits(npcList, sceneName) {
 }
 
 function update(timestamp, dt) {
-  if (dialogueOpen || awaitingName) {
+  if (dialogueOpen || awaitingName || mapOpen) {
     return;
   }
 
@@ -3558,6 +3566,72 @@ function drawDialogueUI() {
   }
 }
 
+// a little colored dot with a dark outline, used for every marker on the
+// full map (player, motorcycle, car) so they all read the same way
+function drawMapMarker(x, y, color, big) {
+  ctx.beginPath();
+  ctx.arc(x, y, big ? 7 : 5, 0, Math.PI * 2);
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.6)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+}
+
+// full-city map overlay - toggled with N (or the MAP touch button), shows
+// every street/building/the park at a glance, plus where the player is and
+// where their motorcycle/car is parked if they own one and aren't riding it
+function drawMinimap() {
+  const pad = 40;
+  const mw = canvas.width - pad * 2;
+  const mh = canvas.height - pad * 2 - 20;
+  const scale = Math.min(mw / WORLD_W, mh / WORLD_H);
+  const ox = pad + (mw - WORLD_W * scale) / 2;
+  const oy = pad + 20 + (mh - WORLD_H * scale) / 2;
+  const wx = x => ox + x * scale;
+  const wy = y => oy + y * scale;
+
+  ctx.save();
+  ctx.fillStyle = 'rgba(8,12,10,0.94)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  ctx.fillStyle = '#2f6a3f';
+  ctx.fillRect(wx(0), wy(0), WORLD_W * scale, WORLD_H * scale);
+
+  ctx.fillStyle = '#3f8a4f';
+  ctx.fillRect(wx(PARK.x), wy(PARK.y), PARK.w * scale, PARK.h * scale);
+
+  ctx.fillStyle = '#555';
+  NUMBERED_STREETS.forEach(s => ctx.fillRect(wx(0), wy(s.y), WORLD_W * scale, Math.max(1, ROAD_W * scale)));
+  NAMED_STREETS.forEach(s => ctx.fillRect(wx(s.x), wy(0), Math.max(1, ROAD_W * scale), WORLD_H * scale));
+
+  buildings.forEach(b => {
+    ctx.fillStyle = b.roof;
+    ctx.fillRect(wx(b.x), wy(b.y), Math.max(1.5, b.w * scale), Math.max(1.5, (b.h + b.wallH) * scale));
+  });
+
+  if (player.hasMotorcycle && motorcycleParked && !player.onMotorcycle) {
+    drawMapMarker(wx(motorcycleParked.x), wy(motorcycleParked.y), '#ffcc33');
+  }
+  if (player.hasCar && carParked && !player.onCar) {
+    drawMapMarker(wx(carParked.x), wy(carParked.y), '#3ad6ff');
+  }
+
+  const onFoot = scene === 'outside';
+  const px = onFoot ? player.x : currentBuilding.x + currentBuilding.w / 2;
+  const py = onFoot ? player.y : currentBuilding.y;
+  drawMapMarker(wx(px), wy(py), '#ff3a3a', true);
+
+  ctx.font = 'bold 20px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('MAP', canvas.width / 2, 30);
+  ctx.font = '13px monospace';
+  ctx.fillStyle = '#aaa';
+  ctx.fillText('[N] to close - red: you   yellow: bike   blue: car', canvas.width / 2, canvas.height - 16);
+  ctx.restore();
+}
+
 function drawHUD() {
   ctx.font = 'bold 18px monospace';
   ctx.textAlign = 'right';
@@ -3648,6 +3722,7 @@ function draw() {
   if (scene === 'outside') drawOutside();
   else drawInterior();
   drawHUD();
+  if (mapOpen) drawMinimap();
 }
 
 function loop(timestamp) {
@@ -3712,6 +3787,7 @@ bindTapButton('talkBtn', pressInteract);
 bindTapButton('gunBtn', toggleGunEquip);
 bindTapButton('motoBtn', toggleMotorcycle);
 bindTapButton('carBtn', toggleCar);
+bindTapButton('mapBtn', toggleMap);
 
 const SAVE_KEY = 'topdownWalkerSave';
 let lastSaveFlashUntil = 0;
