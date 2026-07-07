@@ -2814,25 +2814,13 @@ function drawRoads(camX, camY) {
     }
   });
 
-  // corner sidewalk patches at every intersection - the inner corner (the
-  // one actually touching the road crossing) gets a curb-style curve
-  // instead of a sharp right angle
   ctx.fillStyle = sidewalk;
-  const cornerR = Math.min(14, SIDEWALK_W);
   NUMBERED_STREETS.forEach(hs => {
     NAMED_STREETS.forEach(vs => {
-      ctx.beginPath();
-      ctx.roundRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W, [0, 0, cornerR, 0]);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W, [0, 0, 0, cornerR]);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W, [0, cornerR, 0, 0]);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.roundRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W, [cornerR, 0, 0, 0]);
-      ctx.fill();
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.fillRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
     });
   });
 
@@ -2895,20 +2883,6 @@ function drawParkGround(camX, camY) {
 
   ctx.fillRect(px, py + PARK.h/2 - b/2, PARK.w, b);
   ctx.fillRect(px + PARK.w/2 - b/2, py, b, PARK.h);
-
-  // a couple of curved paths cutting corner-to-center, so the park isn't
-  // only the straight cross of walkways above
-  ctx.strokeStyle = '#c8b585';
-  ctx.lineWidth = b;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.moveTo(px + 40, py + 40);
-  ctx.quadraticCurveTo(px + PARK.w * 0.32, py + PARK.h * 0.12, px + PARK.w / 2, py + PARK.h / 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(px + PARK.w - 40, py + PARK.h - 40);
-  ctx.quadraticCurveTo(px + PARK.w * 0.68, py + PARK.h * 0.88, px + PARK.w / 2, py + PARK.h / 2);
-  ctx.stroke();
 
   const ring = {
     x: PARK_POND.x - 50, y: PARK_POND.y - 50,
@@ -3636,11 +3610,42 @@ function drawMinimap() {
     ctx.fillRect(wx(b.x), wy(b.y), Math.max(1.5, b.w * scale), Math.max(1.5, (b.h + b.wallH) * scale));
   });
 
+  // building names, so the map actually shows what things are and not
+  // just where they are
+  ctx.font = '8px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillStyle = 'rgba(255,255,255,0.8)';
+  buildings.forEach(b => {
+    if (b.name === 'Home') return; // drawn bigger/bolder below
+    const cx = wx(b.x) + Math.max(1.5, b.w * scale) / 2;
+    ctx.fillText(b.name, cx, wy(b.y) - 3);
+  });
+
+  // home gets its own bright outline and bold label since it's the one
+  // place on the map worth calling out by default
+  const home = buildings.find(bd => bd.name === 'Home');
+  if (home) {
+    const hx = wx(home.x), hy = wy(home.y);
+    const hw = Math.max(1.5, home.w * scale), hh = Math.max(1.5, (home.h + home.wallH) * scale);
+    ctx.strokeStyle = '#ffd27f';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(hx - 1.5, hy - 1.5, hw + 3, hh + 3);
+    ctx.font = 'bold 10px monospace';
+    ctx.fillStyle = '#ffd27f';
+    ctx.fillText('HOME', hx + hw / 2, hy - 5);
+  }
+
   if (player.hasMotorcycle && motorcycleParked && !player.onMotorcycle) {
     drawMapMarker(wx(motorcycleParked.x), wy(motorcycleParked.y), '#ffcc33');
+    ctx.font = 'bold 9px monospace';
+    ctx.fillStyle = '#ffcc33';
+    ctx.fillText('bike', wx(motorcycleParked.x), wy(motorcycleParked.y) - 10);
   }
   if (player.hasCar && carParked && !player.onCar) {
     drawMapMarker(wx(carParked.x), wy(carParked.y), '#3ad6ff');
+    ctx.font = 'bold 9px monospace';
+    ctx.fillStyle = '#3ad6ff';
+    ctx.fillText('car', wx(carParked.x), wy(carParked.y) - 10);
   }
 
   const onFoot = scene === 'outside';
@@ -3654,7 +3659,7 @@ function drawMinimap() {
   ctx.fillText('MAP', canvas.width / 2, 30);
   ctx.font = '13px monospace';
   ctx.fillStyle = '#aaa';
-  ctx.fillText('[N] to close - red: you   yellow: bike   blue: car', canvas.width / 2, canvas.height - 16);
+  ctx.fillText('[N] to close - red: you   yellow: bike   blue: car   gold outline: home', canvas.width / 2, canvas.height - 16);
   ctx.restore();
 }
 
@@ -3722,7 +3727,8 @@ function drawHUD() {
   if (items.length === 0) return;
 
   const slotW = 84, slotH = 46, gap = 8;
-  let sx = 14;
+  const totalW = items.length * slotW + (items.length - 1) * gap;
+  let sx = (canvas.width - totalW) / 2;
   const sy = canvas.height - slotH - 14;
   items.forEach(item => {
     drawPanel(sx, sy, slotW, slotH,
