@@ -2543,6 +2543,16 @@ function randomPersonStyle() {
   };
 }
 
+// nightlife spots get a colored, flickering neon sign instead of a plain
+// nametag once it's dark enough - each flickers on its own schedule (seeded
+// by building position) so they don't all stutter in lockstep
+const NIGHTLIFE_SIGN_COLORS = {
+  'Tavern': '#ff8a3a',
+  'Bar': '#3ad6ff',
+  'Strip Club': '#ff2ea6',
+  'Casino': '#c86bff'
+};
+
 function drawBuildingExterior(b, camX, camY, nightFactor) {
   const sx = b.x - camX;
   const sy = b.y - camY;
@@ -2593,10 +2603,29 @@ function drawBuildingExterior(b, camX, camY, nightFactor) {
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
     const textW = ctx.measureText(b.name).width;
-    ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    ctx.fillRect(labelX - textW/2 - 6, labelY - 14, textW + 12, 18);
-    ctx.fillStyle = '#fff';
-    ctx.fillText(b.name, labelX, labelY);
+
+    const neonColor = NIGHTLIFE_SIGN_COLORS[b.name];
+    if (neonColor && nightFactor > 0.15) {
+      // occasional stutter rather than a steady glow - seeded by building
+      // position so each sign flickers on its own independent schedule
+      const flickerBucket = Math.floor(performance.now() / 120);
+      const flicker = hashNoise(b.x, flickerBucket) > 0.12 ? 1 : 0.35;
+      const glowAlpha = nightFactor * flicker;
+      ctx.save();
+      ctx.shadowColor = neonColor;
+      ctx.shadowBlur = 12 * glowAlpha;
+      ctx.fillStyle = 'rgba(10,5,15,0.75)';
+      ctx.fillRect(labelX - textW/2 - 8, labelY - 15, textW + 16, 20);
+      ctx.globalAlpha = 0.6 + 0.4 * glowAlpha;
+      ctx.fillStyle = neonColor;
+      ctx.fillText(b.name, labelX, labelY);
+      ctx.restore();
+    } else {
+      ctx.fillStyle = 'rgba(0,0,0,0.55)';
+      ctx.fillRect(labelX - textW/2 - 6, labelY - 14, textW + 12, 18);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(b.name, labelX, labelY);
+    }
   }
 }
 
@@ -3054,6 +3083,55 @@ function drawTrafficLight(x, y, color, camX, camY) {
   ctx.restore();
 }
 
+// street lamps spaced along both sides of every sidewalk - just a dark
+// pole in daylight, but casting a warm pool of light as night falls
+const LAMP_SPACING = 260;
+const STREET_LAMPS = [];
+NUMBERED_STREETS.forEach(s => {
+  for (let x = 130; x < WORLD_W; x += LAMP_SPACING) {
+    STREET_LAMPS.push({ x, y: s.y - SIDEWALK_W - 6 });
+    STREET_LAMPS.push({ x, y: s.y + ROAD_W + SIDEWALK_W + 6 });
+  }
+});
+NAMED_STREETS.forEach(s => {
+  for (let y = 130; y < WORLD_H; y += LAMP_SPACING) {
+    STREET_LAMPS.push({ x: s.x - SIDEWALK_W - 6, y });
+    STREET_LAMPS.push({ x: s.x + ROAD_W + SIDEWALK_W + 6, y });
+  }
+});
+
+function drawStreetLamp(x, y, camX, camY, nightFactor) {
+  const sx = x - camX, sy = y - camY;
+  if (sx < -60 || sx > canvas.width + 60 || sy < -60 || sy > canvas.height + 60) return;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath();
+  ctx.ellipse(sx, sy + 2, 4, 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  ctx.fillStyle = '#3a3a3a';
+  ctx.fillRect(sx - 2, sy - 42, 4, 42);
+  ctx.fillStyle = '#2a2a2a';
+  ctx.beginPath();
+  ctx.arc(sx, sy - 44, 5, 0, Math.PI * 2);
+  ctx.fill();
+
+  if (nightFactor > 0.12) {
+    const glowR = 60;
+    const grad = ctx.createRadialGradient(sx, sy - 42, 2, sx, sy - 42, glowR);
+    grad.addColorStop(0, `rgba(255,225,150,${(0.32 * nightFactor).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(255,225,150,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.arc(sx, sy - 42, glowR, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,240,190,${(0.6 + 0.4 * nightFactor).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.arc(sx, sy - 44, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawOutside() {
   let camX = player.x + player.w / 2 - canvas.width / 2;
   let camY = player.y + player.h / 2 - canvas.height / 2;
@@ -3099,6 +3177,10 @@ function drawOutside() {
   const currentPhase = getLightPhase(performance.now());
   TRAFFIC_LIGHTS.forEach(light => {
     drawTrafficLight(light.x, light.y, currentPhase[light.axis], camX, camY);
+  });
+
+  STREET_LAMPS.forEach(lamp => {
+    drawStreetLamp(lamp.x, lamp.y, camX, camY, nightFactor);
   });
 
   const drawables = [
