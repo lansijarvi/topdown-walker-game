@@ -3611,18 +3611,24 @@ function drawMinimap() {
   });
 
   // building names, so the map actually shows what things are and not
-  // just where they are
-  ctx.font = '8px monospace';
-  ctx.textAlign = 'center';
-  ctx.fillStyle = 'rgba(255,255,255,0.8)';
-  buildings.forEach(b => {
-    if (b.name === 'Home') return; // drawn bigger/bolder below
-    const cx = wx(b.x) + Math.max(1.5, b.w * scale) / 2;
-    ctx.fillText(b.name, cx, wy(b.y) - 3);
-  });
+  // just where they are - labels that would overlap an already-placed
+  // one are skipped rather than drawn on top of each other
+  const placedLabels = [];
+  function placeLabel(text, cx, cy, font, color) {
+    ctx.font = font;
+    const tw = ctx.measureText(text).width;
+    const rect = { x: cx - tw / 2 - 2, y: cy - 8, w: tw + 4, h: 10 };
+    const overlaps = placedLabels.some(r => rect.x < r.x + r.w && rect.x + rect.w > r.x && rect.y < r.y + r.h && rect.y + rect.h > r.y);
+    if (overlaps) return false;
+    placedLabels.push(rect);
+    ctx.fillStyle = color;
+    ctx.textAlign = 'center';
+    ctx.fillText(text, cx, cy);
+    return true;
+  }
 
-  // home gets its own bright outline and bold label since it's the one
-  // place on the map worth calling out by default
+  // home gets its own bright outline and bold label, placed first so it
+  // always wins any overlap against a regular building name
   const home = buildings.find(bd => bd.name === 'Home');
   if (home) {
     const hx = wx(home.x), hy = wy(home.y);
@@ -3630,22 +3636,22 @@ function drawMinimap() {
     ctx.strokeStyle = '#ffd27f';
     ctx.lineWidth = 2;
     ctx.strokeRect(hx - 1.5, hy - 1.5, hw + 3, hh + 3);
-    ctx.font = 'bold 10px monospace';
-    ctx.fillStyle = '#ffd27f';
-    ctx.fillText('HOME', hx + hw / 2, hy - 5);
+    placeLabel('HOME', hx + hw / 2, hy - 5, 'bold 10px monospace', '#ffd27f');
   }
+
+  buildings.forEach(b => {
+    if (b.name === 'Home') return;
+    const cx = wx(b.x) + Math.max(1.5, b.w * scale) / 2;
+    placeLabel(b.name, cx, wy(b.y) - 3, '8px monospace', 'rgba(255,255,255,0.8)');
+  });
 
   if (player.hasMotorcycle && motorcycleParked && !player.onMotorcycle) {
     drawMapMarker(wx(motorcycleParked.x), wy(motorcycleParked.y), '#ffcc33');
-    ctx.font = 'bold 9px monospace';
-    ctx.fillStyle = '#ffcc33';
-    ctx.fillText('bike', wx(motorcycleParked.x), wy(motorcycleParked.y) - 10);
+    placeLabel('bike', wx(motorcycleParked.x), wy(motorcycleParked.y) - 10, 'bold 9px monospace', '#ffcc33');
   }
   if (player.hasCar && carParked && !player.onCar) {
     drawMapMarker(wx(carParked.x), wy(carParked.y), '#3ad6ff');
-    ctx.font = 'bold 9px monospace';
-    ctx.fillStyle = '#3ad6ff';
-    ctx.fillText('car', wx(carParked.x), wy(carParked.y) - 10);
+    placeLabel('car', wx(carParked.x), wy(carParked.y) - 10, 'bold 9px monospace', '#3ad6ff');
   }
 
   const onFoot = scene === 'outside';
