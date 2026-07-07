@@ -2038,7 +2038,11 @@ function drawDude(cx, cy, color, label, opts) {
   const facing = opts.facing || 'down';
   const gender = opts.gender || 'm';
   const hairColor = opts.hairColor || '#3a2a1a';
-  const scale = opts.kid ? 0.62 : opts.big ? 1.3 : 1;
+  // the riding pose's crouched proportions cover noticeably less area
+  // than standing even at the same scale value, which reads as the
+  // character shrinking the moment they mount up - scale it up to
+  // compensate so mounting doesn't change the character's apparent size
+  const scale = opts.kid ? 0.62 : opts.big ? 1.3 : opts.riding ? 1.3 : 1;
   const baseColor = color || '#3a6fd8';
   const bodyGrad = ctx.createLinearGradient(0, -35, 0, 0);
   bodyGrad.addColorStop(0, shadeColor(baseColor, 22));
@@ -3171,8 +3175,11 @@ function carShouldStopAtLight(car, timestamp) {
 // true if another car sharing the same street, axis and direction (so:
 // the same lane) is close enough ahead that this car should hold back -
 // otherwise two cars in the same lane just drive straight through each
-// other since neither was ever aware the other existed
-const CAR_FOLLOW_GAP = 46;
+// other since neither was ever aware the other existed. Needs to be at
+// least the car's own rendered length (60 half-length at the current
+// draw scale, for the longer side-view orientation) or they'd still
+// visually overlap even while "holding back"
+const CAR_FOLLOW_GAP = 150;
 function carAhead(car) {
   return trafficCars.some(other => {
     if (other === car || other.axis !== car.axis || other.dir !== car.dir || other.street !== car.street) return false;
@@ -3777,10 +3784,13 @@ function drawHUD() {
   }
   if (items.length === 0) return;
 
+  // right-aligned, tucked into the gap just below the RELOAD/SHOOT
+  // buttons and above the touch action row, instead of sitting over the
+  // d-pad or floating in the middle of the screen
   const slotW = 84, slotH = 46, gap = 8;
   const totalW = items.length * slotW + (items.length - 1) * gap;
-  let sx = (canvas.width - totalW) / 2;
-  const sy = canvas.height - slotH - 14;
+  let sx = canvas.width - 16 - totalW;
+  const sy = canvas.height - 128;
   items.forEach(item => {
     drawPanel(sx, sy, slotW, slotH,
       item.active ? 'rgba(255,210,127,0.3)' : 'rgba(30,30,30,0.65)',
