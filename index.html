@@ -1052,18 +1052,7 @@ const buildings = [
   {x: 560, y: 1050, w: 280, h: 65, wallH: 45, roof: '#5f7a5f', wall: '#3a503a', name: 'Library', floor: '#4a3f33', npcs: [{name:'Librarian Lena', color:'#c2905f'}]},
   {x: 2610, y: 1050, w: 170, h: 65, wallH: 45, roof: '#c2905f', wall: '#8f5f3a', name: 'School', floor: '#e8e8d8', npcs: [{name:'Teacher Tess', color:'#5f8fc2'}]},
   {x: 2870, y: 1050, w: 220, h: 65, wallH: 45, roof: '#c25f5f', wall: '#8f3a3a', name: 'Fire Station', floor: '#3a3a3a', npcs: [{name:'Firefighter Finn', color:'#c25f5f', gender:'m', big:true}]},
-  {x: 3150, y: 1050, w: 200, h: 65, wallH: 45, roof: '#8a8a9a', wall: '#5f5f70', name: 'Church', floor: '#d8d0c0', npcs: [{name:'Father Fred', color:'#2a2a2a', gender:'m'}]},
-
-  // --- flanking the vertical streets (Oak/Pine/Elm/Maple) - doors face
-  // sideways toward the road they front instead of the usual south wall ---
-  {x: 170,  y: 1480, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c25f9a', wall: '#8f3a70', name: 'Flower Shop',      floor: '#f0e0e8', npcs: [{name:'Florist Fiona', color:'#c25f9a'}]},
-  {x: 520,  y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5fc2c2', wall: '#3a8f8f', name: 'Ice Cream Parlor', floor: '#e0f0f0', npcs: [{name:'Scoop Sadie',   color:'#5fc2c2'}]},
-  {x: 670,  y: 1160, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c2795f', wall: '#8f4a3a', name: 'Barbecue Joint',   floor: '#e8d0b8', npcs: [{name:'Pitmaster Paul', color:'#c2795f'}]},
-  {x: 1020, y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5f7ac2', wall: '#3a4a8f', name: 'Comic Shop',       floor: '#d8d8e8', npcs: [{name:'Collector Cody', color:'#5f7ac2'}]},
-  {x: 1780, y: 20,   w: 60,  h: 130, wallH: 40, doorSide: 'east', roof: '#8f8f5f', wall: '#5f5f3a', name: 'Newsstand',        floor: '#d0d0b8', npcs: [{name:'Vendor Vince',   color:'#8f8f5f'}]},
-  {x: 2020, y: 1140, w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#9a5fc2', wall: '#6a3a8f', name: 'Tailor Shop',      floor: '#e0d8f0', npcs: [{name:'Tailor Tina',    color:'#9a5fc2'}]},
-  {x: 2170, y: 1270, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c2a05f', wall: '#8f703a', name: 'Hardware Store',   floor: '#d8c8a8', npcs: [{name:'Hardware Hal',   color:'#c2a05f'}]},
-  {x: 2520, y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5fc27a', wall: '#3a8f4a', name: 'Music Store',      floor: '#d0e8d8', npcs: [{name:'DJ Dana',        color:'#5fc27a'}]}
+  {x: 3150, y: 1050, w: 200, h: 65, wallH: 45, roof: '#8a8a9a', wall: '#5f5f70', name: 'Church', floor: '#d8d0c0', npcs: [{name:'Father Fred', color:'#2a2a2a', gender:'m'}]}
 ];
 
 buildings.forEach(b => b.npcs.forEach(n => {
