@@ -2601,9 +2601,22 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   }
   ctx.restore();
 
+  // door sits at ground level and is only a little taller than a
+  // character, rather than spanning the whole wall band on tall buildings
   const dz = b.doorZone;
+  const doorH = Math.min(b.wallH, 56);
   ctx.fillStyle = '#2a1f18';
-  ctx.fillRect(dz.x - camX, sy + b.h, dz.w, b.wallH);
+  ctx.fillRect(dz.x - camX, sy + b.h + b.wallH - doorH, dz.w, doorH);
+
+  // a short walkway leading up to the door on some buildings, not all of
+  // them, and not all sized/colored the same
+  const walkRoll = hashNoise(b.x * 2.7 + 11, b.y * 4.1 + 3);
+  if (walkRoll > 0.45) {
+    const walkLen = 14 + hashNoise(b.x, b.y + 50) * 18;
+    const walkW = dz.w - 6 + hashNoise(b.x + 5, b.y) * 8;
+    ctx.fillStyle = hashNoise(b.x, b.y + 90) > 0.5 ? '#9a8f74' : '#8a9a80';
+    ctx.fillRect(dz.x - camX + (dz.w - walkW) / 2, sy + b.h + b.wallH, walkW, walkLen);
+  }
 
   ctx.fillStyle = b.roof;
   ctx.fillRect(sx, sy, b.w, b.h);
