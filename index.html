@@ -2284,7 +2284,10 @@ function drawDude(cx, cy, color, label, opts) {
     }
   }
 
-  if (facing !== 'up') {
+  // front-riding always shows the back of the head/helmet, same as facing
+  // up while standing - hunched forward over the bars reads the same way
+  // whether you're heading up or down the screen, not suddenly face-on
+  if (facing !== 'up' && !frontRiding) {
     let ex = headX;
     if (frontRiding) {
       // no left/right distinction while facing the camera on the bike
