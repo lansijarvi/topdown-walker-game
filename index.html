@@ -1100,11 +1100,10 @@ const citizens = [
 }));
 
 buildings.forEach(b => {
-  // some buildings sit back a little from the curb with a walkway
-  // connecting the door to it - not all of them, and the depth varies
-  // building to building, seeded from its own position so it stays put
-  const walkRoll = hashNoise(b.x * 2.7 + 11, b.y * 4.1 + 3);
-  b.yardDepth = walkRoll > 0.45 ? Math.min(14 + hashNoise(b.x, b.y + 50) * 14, b.wallH - 36) : 0;
+  // every building sits back a little from the curb with a walkway
+  // connecting the door to it - depth varies building to building, seeded
+  // from its own position so it stays put
+  b.yardDepth = Math.min(14 + hashNoise(b.x, b.y + 50) * 14, b.wallH - 36);
   b.wallDepth = b.wallH - b.yardDepth;
 
   b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallDepth - 10, w: 36, h: 20 };
