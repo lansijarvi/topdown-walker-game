@@ -2114,6 +2114,10 @@ function drawDude(cx, cy, color, label, opts) {
     ctx.translate(-2, -4);
   } else if (frontRiding) {
     ctx.translate(0, -2);
+    // the crouch pose is drawn facing "up" by default - mirror it 180 for
+    // "down" so the rider's sitting position matches the bike, the same
+    // convention drawMotorcycle/drawCar use for their own rotation
+    if (facing === 'down') ctx.rotate(Math.PI);
   }
 
   if (!opts.riding) {
