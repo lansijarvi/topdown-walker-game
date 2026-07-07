@@ -2976,7 +2976,7 @@ function getLightPhase(timestamp) {
 // between 0 (full daylight) and 1 (deep night) rather than snapping, so
 // windows/headlights glow brighter and the whole scene cools down as it
 // "sets" and warms back up as it "rises"
-const DAY_NIGHT_CYCLE_MS = 5 * 60 * 1000;
+const DAY_NIGHT_CYCLE_MS = 45 * 60 * 1000;
 function getNightFactor(timestamp) {
   const t = (timestamp % DAY_NIGHT_CYCLE_MS) / DAY_NIGHT_CYCLE_MS;
   return (1 - Math.cos(t * Math.PI * 2)) / 2;
