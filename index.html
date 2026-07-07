@@ -1100,7 +1100,14 @@ const citizens = [
 }));
 
 buildings.forEach(b => {
-  b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallH - 10, w: 36, h: 20 };
+  // some buildings sit back a little from the curb with a walkway
+  // connecting the door to it - not all of them, and the depth varies
+  // building to building, seeded from its own position so it stays put
+  const walkRoll = hashNoise(b.x * 2.7 + 11, b.y * 4.1 + 3);
+  b.yardDepth = walkRoll > 0.45 ? Math.min(14 + hashNoise(b.x, b.y + 50) * 14, b.wallH - 36) : 0;
+  b.wallDepth = b.wallH - b.yardDepth;
+
+  b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallDepth - 10, w: 36, h: 20 };
   b.npcs.forEach((n, i) => {
     n.x = 80 + (i % 3) * 140;
     n.y = 100 + Math.floor(i / 3) * 80;
@@ -1493,7 +1500,7 @@ function tryMoveOutside(dx, dy) {
   let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
   next.x = Math.max(0, Math.min(WORLD_W - player.w, next.x));
   let blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
@@ -1502,7 +1509,7 @@ function tryMoveOutside(dx, dy) {
   next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
   next.y = Math.max(0, Math.min(WORLD_H - player.h, next.y));
   blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
+    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
@@ -2561,7 +2568,7 @@ function isPlayerBehindBuilding(b) {
   const ppx = player.x + player.w / 2;
   const ppy = player.y + player.h;
   const withinX = ppx > b.x + 4 && ppx < b.x + b.w - 4;
-  const withinFront = ppy >= b.y + b.h - 10 && ppy <= b.y + b.h + b.wallH + 24;
+  const withinFront = ppy >= b.y + b.h - 10 && ppy <= b.y + b.h + b.wallDepth + 24;
   return withinX && withinFront;
 }
 
@@ -2569,26 +2576,40 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   const sx = b.x - camX;
   const sy = b.y - camY;
   nightFactor = nightFactor || 0;
+  const dz = b.doorZone;
+
+  // buildings with a yard get a grass gap plus a walkway between the curb
+  // (sidewalk, right at the original wallH edge) and the door - buildings
+  // without one (b.yardDepth === 0) sit flush against the curb as before
+  if (b.yardDepth > 0) {
+    const yardY = sy + b.h + b.wallDepth;
+    ctx.fillStyle = '#5a8f4f';
+    ctx.fillRect(sx, yardY, b.w, b.yardDepth);
+    ctx.fillStyle = hashNoise(b.x, b.y + 90) > 0.5 ? '#9a8f74' : '#8a9a80';
+    const walkW = dz.w - 6 + hashNoise(b.x + 5, b.y) * 8;
+    ctx.fillRect(dz.x - camX + (dz.w - walkW) / 2, yardY, walkW, b.yardDepth);
+  }
 
   ctx.save();
   if (faded) ctx.globalAlpha = 0.45;
 
   // soft ground shadow cast toward the bottom-right, grounding the
   // building instead of it looking like it's floating on the grass/sidewalk
-  const shadowGrad = ctx.createLinearGradient(sx, sy + b.h + b.wallH, sx, sy + b.h + b.wallH + 16);
+  const shadowGrad = ctx.createLinearGradient(sx, sy + b.h + b.wallDepth, sx, sy + b.h + b.wallDepth + 16);
   shadowGrad.addColorStop(0, 'rgba(0,0,0,0.28)');
   shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = shadowGrad;
-  ctx.fillRect(sx + 6, sy + b.h + b.wallH, b.w, 16);
+  ctx.fillRect(sx + 6, sy + b.h + b.wallDepth, b.w, 16);
 
   ctx.fillStyle = b.wall;
-  ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.fillRect(sx, sy, b.w, b.h + b.wallDepth);
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.strokeRect(sx, sy, b.w, b.h + b.wallDepth);
 
   // windows glow warmer and brighter as night falls, with a soft halo once
-  // it's dark enough to actually read as "lit up" rather than just yellow
+  // it's dark enough to actually read as "lit up" rather than just yellow -
+  // skipped directly behind the door so the two never overlap
   const winW = 14, winH = 18;
   ctx.save();
   if (nightFactor > 0.3) {
@@ -2597,26 +2618,16 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   }
   ctx.fillStyle = `rgba(255, 235, 170, ${(0.5 + nightFactor * 0.45).toFixed(3)})`;
   for (let wx = sx + 16; wx < sx + b.w - 16; wx += winW + 20) {
+    if (wx + winW > dz.x - camX - 4 && wx < dz.x - camX + dz.w + 4) continue;
     ctx.fillRect(wx, sy + b.h + 14, winW, winH);
   }
   ctx.restore();
 
   // door sits at ground level and is only a little taller than a
   // character, rather than spanning the whole wall band on tall buildings
-  const dz = b.doorZone;
-  const doorH = Math.min(b.wallH, 56);
+  const doorH = Math.min(b.wallDepth, 56);
   ctx.fillStyle = '#2a1f18';
-  ctx.fillRect(dz.x - camX, sy + b.h + b.wallH - doorH, dz.w, doorH);
-
-  // a short walkway leading up to the door on some buildings, not all of
-  // them, and not all sized/colored the same
-  const walkRoll = hashNoise(b.x * 2.7 + 11, b.y * 4.1 + 3);
-  if (walkRoll > 0.45) {
-    const walkLen = 14 + hashNoise(b.x, b.y + 50) * 18;
-    const walkW = dz.w - 6 + hashNoise(b.x + 5, b.y) * 8;
-    ctx.fillStyle = hashNoise(b.x, b.y + 90) > 0.5 ? '#9a8f74' : '#8a9a80';
-    ctx.fillRect(dz.x - camX + (dz.w - walkW) / 2, sy + b.h + b.wallH, walkW, walkLen);
-  }
+  ctx.fillRect(dz.x - camX, sy + b.h + b.wallDepth - doorH, dz.w, doorH);
 
   ctx.fillStyle = b.roof;
   ctx.fillRect(sx, sy, b.w, b.h);
