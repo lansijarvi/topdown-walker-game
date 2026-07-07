@@ -3582,7 +3582,7 @@ function drawMapMarker(x, y, color, big) {
 // every street/building/the park at a glance, plus where the player is and
 // where their motorcycle/car is parked if they own one and aren't riding it
 function drawMinimap() {
-  const pad = 40;
+  const pad = 20;
   const mw = canvas.width - pad * 2;
   const mh = canvas.height - pad * 2 - 20;
   const scale = Math.min(mw / WORLD_W, mh / WORLD_H);
@@ -3611,19 +3611,27 @@ function drawMinimap() {
   });
 
   // building names, so the map actually shows what things are and not
-  // just where they are - labels that would overlap an already-placed
-  // one are skipped rather than drawn on top of each other
+  // just where they are - every label gets shown, but one that would
+  // overlap an already-placed label gets nudged up/down in small steps
+  // (progressively further out) until it finds a clear spot, rather than
+  // being skipped or drawn on top of another name
   const placedLabels = [];
   function placeLabel(text, cx, cy, font, color) {
     ctx.font = font;
     const tw = ctx.measureText(text).width;
-    const rect = { x: cx - tw / 2 - 2, y: cy - 8, w: tw + 4, h: 10 };
-    const overlaps = placedLabels.some(r => rect.x < r.x + r.w && rect.x + rect.w > r.x && rect.y < r.y + r.h && rect.y + rect.h > r.y);
-    if (overlaps) return false;
-    placedLabels.push(rect);
+    const h = 9;
+    let finalY = cy;
+    let found = false;
+    for (let attempt = 0; attempt < 30 && !found; attempt++) {
+      const testY = attempt === 0 ? cy : cy + (attempt % 2 === 1 ? -1 : 1) * Math.ceil(attempt / 2) * h;
+      const rect = { x: cx - tw / 2 - 2, y: testY - h, w: tw + 4, h: h + 2 };
+      const overlaps = placedLabels.some(r => rect.x < r.x + r.w && rect.x + rect.w > r.x && rect.y < r.y + r.h && rect.y + rect.h > r.y);
+      if (!overlaps) { finalY = testY; found = true; placedLabels.push(rect); }
+    }
+    if (!found) placedLabels.push({ x: cx - tw / 2 - 2, y: cy - h, w: tw + 4, h: h + 2 });
     ctx.fillStyle = color;
     ctx.textAlign = 'center';
-    ctx.fillText(text, cx, cy);
+    ctx.fillText(text, cx, finalY);
     return true;
   }
 
