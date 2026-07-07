@@ -360,44 +360,39 @@ const beerOnlyTree = {
 
 const breeTree = {
   startSkull: {
-    speaker: 'npc', 
-    text: "Ooh, skull tattoo? You look like the kind of guy who'd choke me while you fuck me senseless.",
+    speaker: 'npc',
+    text: "Ooh, skull tattoo? Somebody's trying to look dangerous.",
     options: [
       { label: 'Play it cool', next: 'skullCool' },
-      { label: '"I\'d wreck that pussy."', next: 'skullFlirt' }
+      { label: '"Guilty as charged."', next: 'skullFlirt' }
     ]
   },
-  skullCool:  { speaker: 'npc', text: "Mysterious and dangerous... my panties are already wet.", next: 'orderMenu' },
-  skullFlirt: { speaker: 'npc', text: "Fuck yes. Come find me after closing and prove it, big boy.", next: 'orderMenu' },
+  skullCool:  { speaker: 'npc', text: "Mysterious type, huh? I like it.", next: 'orderMenu' },
+  skullFlirt: { speaker: 'npc', text: "Careful, that act might actually work on me.", next: 'orderMenu' },
 
   startFlower: {
-    speaker: 'npc', text: "A flower tattoo? Cute... but I bet you still fuck like an animal.",
+    speaker: 'npc', text: "A flower tattoo? Sweet. I like a guy in touch with his feelings.",
     options: [
       { label: '"I have layers."', next: 'flowerCharm' },
-      { label: 'Grin', next: 'flowerShrug' }
+      { label: 'Shrug', next: 'flowerShrug' }
     ]
   },
-  flowerCharm: { speaker: 'npc', text: "Mmm, confident. I like that. You can bend me over the bar later.", next: 'orderMenu' },
-  flowerShrug: { speaker: 'npc', text: "Strong silent type with a flower? Interesting. Still want you to rail me though.", next: 'orderMenu' },
+  flowerCharm: { speaker: 'npc', text: "Ha! Careful, that's kind of working on me.", next: 'orderMenu' },
+  flowerShrug: { speaker: 'npc', text: "Strong, silent, and floral. Interesting combo.", next: 'orderMenu' },
 
   startNone: {
-    speaker: 'npc', text: "Hey stranger. Blank canvas, huh? I bet I could mark you up real good.",
+    speaker: 'npc', text: "Hey there. Kind of a blank slate, aren't you?",
     next: 'noneReply'
   },
   noneReply: { speaker: 'you', text: "Guess I haven't found my look yet.", next: 'orderMenu' },
 
   orderMenu: {
-    speaker: 'npc', text: "What can I get you, handsome? Or you just here to eye-fuck me?",
+    speaker: 'npc', text: "What can I get you, handsome?",
     options: [
       { label: `Beer ($${BEER_PRICE})`, next: 'checkBeer' },
       { label: `Shot ($${SHOT_PRICE})`, next: 'checkShot' },
-      { label: 'Take me to the back room', next: 'backroom' },
       { label: 'Nothing, thanks', next: 'noThanks' }
     ]
-  },
-  backroom: {
-    speaker: 'npc', text: "God yes. Lock the door behind you...", end: true,
-    effect: (p) => { console.log("Raunchy backroom scene with Bree triggered"); }
   },
   checkBeer: {
     speaker: 'npc',
@@ -417,8 +412,8 @@ const breeTree = {
     speaker: 'npc', text: "Here's your shot!", end: true,
     effect: (p) => { p.money -= SHOT_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
   },
-  tooExpensive: { speaker: 'npc', text: "Come back when you've got cash... or just come back for me.", end: true },
-  noThanks: { speaker: 'npc', text: "Tease. Come back soon, I'm already thinking about you.", end: true }
+  tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
+  noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
 };
 
 const GUN_PRICE = 250;
