@@ -2929,13 +2929,14 @@ function drawParkGround(camX, camY) {
   });
 }
 
-function drawTree(px, py, camX, camY) {
+function drawTree(px, py, camX, camY, scale) {
   const x = px - camX, y = py - camY;
   // slight per-tree color variation, deterministic from position, so a
   // whole forest of trees doesn't read as identical copy-pasted clones
   const v = (hashNoise(px, py) - 0.5) * 24;
   ctx.save();
   ctx.translate(x, y);
+  if (scale && scale !== 1) ctx.scale(scale, scale);
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.beginPath();
   ctx.ellipse(0, 4, 14, 5, 0, 0, Math.PI*2);
@@ -2960,11 +2961,12 @@ function drawTree(px, py, camX, camY) {
   ctx.restore();
 }
 
-function drawPineTree(px, py, camX, camY) {
+function drawPineTree(px, py, camX, camY, scale) {
   const x = px - camX, y = py - camY;
   const v = (hashNoise(px, py) - 0.5) * 24;
   ctx.save();
   ctx.translate(x, y);
+  if (scale && scale !== 1) ctx.scale(scale, scale);
 
   ctx.fillStyle = 'rgba(0,0,0,0.3)';
   ctx.beginPath();
@@ -2990,9 +2992,17 @@ const CITY_TREES = [
   {"x":3106,"y":1927},{"x":2896,"y":2200},{"x":3005,"y":1503},{"x":2225,"y":1195},{"x":2319,"y":86},
   {"x":2365,"y":1160},{"x":2730,"y":2176},{"x":2993,"y":1205},{"x":1329,"y":608},{"x":2780,"y":2251},
   {"x":750,"y":1646},{"x":191,"y":1359},{"x":322,"y":687},{"x":3122,"y":1782},{"x":1572,"y":142},
-  {"x":2202,"y":2210},{"x":1157,"y":2197},{"x":3092,"y":2212}
-].map((t, i) => ({ ...t, pine: i % 3 === 0 }));
-const cityTreeObstacles = CITY_TREES.map(t => ({ x: t.x - 6, y: t.y - 6, w: 12, h: 12 }));
+  {"x":2202,"y":2210},{"x":1157,"y":2197},{"x":3092,"y":2212},
+  {"x":1868,"y":611},{"x":879,"y":2811},{"x":3496,"y":170},{"x":257,"y":2338},{"x":1668,"y":2972},
+  {"x":4504,"y":1758},{"x":1347,"y":2899},{"x":3502,"y":1433},{"x":2316,"y":676},{"x":2980,"y":1448},
+  {"x":3803,"y":2236},{"x":685,"y":2301},{"x":3002,"y":2404},{"x":1615,"y":2925},{"x":867,"y":1596},
+  {"x":3028,"y":706},{"x":3072,"y":1495},{"x":1756,"y":2785},{"x":2227,"y":2914},{"x":624,"y":2535},
+  {"x":1441,"y":2227},{"x":3826,"y":1594}
+].map((t, i) => ({ ...t, pine: i % 3 === 0, scale: i % 4 === 1 ? 1.5 : 1 }));
+const cityTreeObstacles = CITY_TREES.map(t => {
+  const r = 6 * t.scale;
+  return { x: t.x - r, y: t.y - r, w: r * 2, h: r * 2 };
+});
 
 // subtle asphalt wear patches, computed once up front rather than every
 // frame - a fixed list of dark blotches scattered along each street, same
@@ -3293,8 +3303,8 @@ function drawOutside() {
       drawTree(PARK.x + d.obj.x, PARK.y + d.obj.y, camX, camY);
     } else if (d.type === 'citytree') {
       const t = d.obj;
-      if (t.pine) drawPineTree(t.x, t.y, camX, camY);
-      else drawTree(t.x, t.y, camX, camY);
+      if (t.pine) drawPineTree(t.x, t.y, camX, camY, t.scale);
+      else drawTree(t.x, t.y, camX, camY, t.scale);
     } else if (d.type === 'parkwalker') {
       const w = d.obj;
       const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
