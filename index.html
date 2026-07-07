@@ -2358,8 +2358,12 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillStyle = '#777';
     ctx.beginPath(); ctx.arc(18, 9, 3.5, 0, Math.PI * 2); ctx.fill();
 
-    // low, stretched cruiser frame between the wheels
-    ctx.fillStyle = frameColor;
+    // low, stretched cruiser frame between the wheels, top-lit to match
+    // every other vehicle/character instead of a flat fill
+    const frameGrad = ctx.createLinearGradient(0, -6, 0, 6);
+    frameGrad.addColorStop(0, shadeColor(frameColor, 22));
+    frameGrad.addColorStop(1, shadeColor(frameColor, -16));
+    ctx.fillStyle = frameGrad;
     ctx.beginPath();
     ctx.moveTo(-20, 6);
     ctx.lineTo(-9, -6);
@@ -2407,8 +2411,12 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.beginPath(); ctx.ellipse(0, -18, 4, 5.5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(0, 18, 4, 5.5, 0, 0, Math.PI * 2); ctx.fill();
 
-    // body/tank, wider and longer for the cruiser stance
-    ctx.fillStyle = frameColor;
+    // body/tank, wider and longer for the cruiser stance, same top-lit
+    // gradient as the side view
+    const tankGrad = ctx.createLinearGradient(0, -15, 0, 15);
+    tankGrad.addColorStop(0, shadeColor(frameColor, 22));
+    tankGrad.addColorStop(1, shadeColor(frameColor, -16));
+    ctx.fillStyle = tankGrad;
     ctx.fillRect(-6, -15, 12, 30);
 
     // seat
@@ -2432,9 +2440,18 @@ function drawMotorcycle(cx, cy, facing, color) {
 // visible in the side profile and a windshield band in every orientation
 function drawCar(cx, cy, facing, color, police) {
   const bodyColor = color || '#8f2e2e';
+  const fenderColor = shadeColor(bodyColor, -22);
   ctx.save();
   ctx.translate(cx, cy - 8);
   ctx.scale(2.0, 2.0);
+
+  // metallic-ish hubcap gradient, reused for every wheel on the car
+  function hubcapGradient(wx, wy, r) {
+    const g = ctx.createRadialGradient(wx - r * 0.3, wy - r * 0.3, r * 0.1, wx, wy, r);
+    g.addColorStop(0, '#e8e8e8');
+    g.addColorStop(1, '#9a9a9a');
+    return g;
+  }
 
   if (facing === 'left' || facing === 'right') {
     const dir = facing === 'right' ? 1 : -1;
@@ -2446,12 +2463,18 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.fill();
 
     // fender bulges tuck the wheels into the body instead of them just
-    // being bolted under a flat box
-    ctx.fillStyle = bodyColor;
+    // being bolted under a flat box - shaded a touch darker so they read
+    // as recessed wells rather than flat body color
+    ctx.fillStyle = fenderColor;
     ctx.beginPath(); ctx.ellipse(-19, 9, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
     ctx.beginPath(); ctx.ellipse(17, 9, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
 
-    // low rounded chassis
+    // low rounded chassis, top-lit like every character sprite so the car
+    // doesn't look like a flat color swatch next to everything else
+    const chassisGrad = ctx.createLinearGradient(0, -6, 0, 12);
+    chassisGrad.addColorStop(0, shadeColor(bodyColor, 20));
+    chassisGrad.addColorStop(1, shadeColor(bodyColor, -16));
+    ctx.fillStyle = chassisGrad;
     ctx.beginPath();
     ctx.roundRect(-30, -6, 60, 18, 6);
     ctx.fill();
@@ -2461,15 +2484,22 @@ function drawCar(cx, cy, facing, color, police) {
 
     // rounded cabin bump on top, set back slightly from the front so the
     // hood/windshield reads as sloped rather than a flat box
-    ctx.fillStyle = bodyColor;
+    const cabinGrad = ctx.createLinearGradient(0, -20, 0, -5);
+    cabinGrad.addColorStop(0, shadeColor(bodyColor, 26));
+    cabinGrad.addColorStop(1, shadeColor(bodyColor, -8));
+    ctx.fillStyle = cabinGrad;
     ctx.beginPath();
     ctx.roundRect(-15, -20, 30, 15, [9, 7, 2, 2]);
     ctx.fill();
     ctx.strokeStyle = 'rgba(0,0,0,0.3)';
     ctx.stroke();
 
-    // windshield glass, two panes split by a center pillar
-    ctx.fillStyle = '#9fd0e8';
+    // windshield glass, two panes split by a center pillar, with a soft
+    // gradient instead of one flat blue
+    const glassGrad = ctx.createLinearGradient(0, -17, 0, -7);
+    glassGrad.addColorStop(0, '#c8e8f5');
+    glassGrad.addColorStop(1, '#7fb0d0');
+    ctx.fillStyle = glassGrad;
     ctx.beginPath();
     ctx.roundRect(-11, -17, 24, 10, 4);
     ctx.fill();
@@ -2492,7 +2522,7 @@ function drawCar(cx, cy, facing, color, police) {
     [-19, 17].forEach(wx => {
       ctx.fillStyle = '#0f0f0f';
       ctx.beginPath(); ctx.arc(wx, 11, 9, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#c8c8c8';
+      ctx.fillStyle = hubcapGradient(wx, 11, 5.5);
       ctx.beginPath(); ctx.arc(wx, 11, 5.5, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#0f0f0f';
       ctx.beginPath(); ctx.arc(wx, 11, 2, 0, Math.PI * 2); ctx.fill();
@@ -2527,12 +2557,16 @@ function drawCar(cx, cy, facing, color, police) {
     [[-11, -16], [11, -16], [-11, 14], [11, 14]].forEach(([wx, wy]) => {
       ctx.fillStyle = '#0f0f0f';
       ctx.beginPath(); ctx.arc(wx, wy, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#c8c8c8';
+      ctx.fillStyle = hubcapGradient(wx, wy, 3);
       ctx.beginPath(); ctx.arc(wx, wy, 3, 0, Math.PI * 2); ctx.fill();
     });
 
-    // main body - a plain rounded box instead of a flared hexagon
-    ctx.fillStyle = bodyColor;
+    // main body - a plain rounded box, top-lit to match the side view and
+    // every character sprite instead of one flat fill
+    const bodyGrad = ctx.createLinearGradient(0, -24, 0, 20);
+    bodyGrad.addColorStop(0, shadeColor(bodyColor, 20));
+    bodyGrad.addColorStop(1, shadeColor(bodyColor, -16));
+    ctx.fillStyle = bodyGrad;
     ctx.beginPath();
     ctx.roundRect(-16, -24, 32, 44, 5);
     ctx.fill();
@@ -2541,7 +2575,10 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.stroke();
 
     // windshield band
-    ctx.fillStyle = '#9fd0e8';
+    const glassGrad2 = ctx.createLinearGradient(0, -20, 0, -11);
+    glassGrad2.addColorStop(0, '#c8e8f5');
+    glassGrad2.addColorStop(1, '#7fb0d0');
+    ctx.fillStyle = glassGrad2;
     ctx.fillRect(-12, -20, 24, 9);
 
     // headlights
