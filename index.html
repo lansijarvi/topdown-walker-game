@@ -1270,11 +1270,15 @@ function applyImpact(entity, dirX, dirY, force) {
 }
 
 // call every frame for anyone who might currently be knocked down - slides
-// them to a stop via friction rather than leaving them frozen mid-bounce
-function applyKnockbackDecay(entity, dt) {
+// them to a stop via friction rather than leaving them frozen mid-bounce.
+// An optional `blocked(x, y)` check (e.g. the park pond) stops the slide
+// from ever depositing someone in a spot they couldn't walk to on their own.
+function applyKnockbackDecay(entity, dt, blocked) {
   if (!entity.kbVX && !entity.kbVY) return;
-  entity.x = Math.max(0, Math.min(WORLD_W, entity.x + entity.kbVX * dt));
-  entity.y = Math.max(0, Math.min(WORLD_H, entity.y + entity.kbVY * dt));
+  const nx = Math.max(0, Math.min(WORLD_W, entity.x + entity.kbVX * dt));
+  const ny = Math.max(0, Math.min(WORLD_H, entity.y + entity.kbVY * dt));
+  if (!blocked || !blocked(nx, entity.y)) entity.x = nx;
+  if (!blocked || !blocked(entity.x, ny)) entity.y = ny;
   const decay = Math.pow(KNOCKBACK_FRICTION, dt);
   entity.kbVX *= decay;
   entity.kbVY *= decay;
@@ -1383,7 +1387,10 @@ function update(timestamp, dt) {
   }
 
   citizens.forEach(c => applyKnockbackDecay(c, dt));
-  parkWalkers.forEach(w => applyKnockbackDecay(w, dt));
+  parkWalkers.forEach(w => applyKnockbackDecay(w, dt, (px, py) =>
+    px > PARK_POND.x - 12 && px < PARK_POND.x + PARK_POND.w + 12 &&
+    py > PARK_POND.y - 12 && py < PARK_POND.y + PARK_POND.h + 12
+  ));
   if (scene === 'interior' && currentBuilding) currentBuilding.npcs.forEach(n => applyKnockbackDecay(n, dt));
 
   citizens.forEach(c => { if (c.knockedDownUntil && timestamp > c.knockedDownUntil && !c.recovered) { c.recovered = true; c.nextDecision = 0; } });
@@ -1525,7 +1532,13 @@ function update(timestamp, dt) {
       const wdist = Math.hypot(wdx, wdy);
       if (wdist > 2) {
         const margin = 12;
-        const pondBlocks = (px, py) =>
+        // only blocks stepping IN - if something (e.g. an old knockback bug,
+        // or a save from before this fix) already left a walker inside the
+        // pond box, this must never prevent them from stepping back out
+        const wasInPond =
+          w.x > PARK_POND.x - margin && w.x < PARK_POND.x + PARK_POND.w + margin &&
+          w.y > PARK_POND.y - margin && w.y < PARK_POND.y + PARK_POND.h + margin;
+        const pondBlocks = (px, py) => !wasInPond &&
           px > PARK_POND.x - margin && px < PARK_POND.x + PARK_POND.w + margin &&
           py > PARK_POND.y - margin && py < PARK_POND.y + PARK_POND.h + margin;
 
