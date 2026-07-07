@@ -1846,7 +1846,7 @@ function update(timestamp, dt) {
     // they're currently heading (so a U-turn also means a lane change).
     // Cars hold at a red or yellow light rather than driving straight through.
     trafficCars.forEach(car => {
-      const stopped = carShouldStopAtLight(car, timestamp);
+      const stopped = carShouldStopAtLight(car, timestamp) || carAhead(car);
       if (car.axis === 'h') {
         if (!stopped) {
           car.x += car.dir * car.speed * dt;
@@ -3095,6 +3095,21 @@ function carShouldStopAtLight(car, timestamp) {
       return approach >= -2 && approach < LIGHT_STOP_ZONE;
     });
   }
+}
+
+// true if another car sharing the same street, axis and direction (so:
+// the same lane) is close enough ahead that this car should hold back -
+// otherwise two cars in the same lane just drive straight through each
+// other since neither was ever aware the other existed
+const CAR_FOLLOW_GAP = 46;
+function carAhead(car) {
+  return trafficCars.some(other => {
+    if (other === car || other.axis !== car.axis || other.dir !== car.dir || other.street !== car.street) return false;
+    const ahead = car.axis === 'h'
+      ? (car.dir > 0 ? other.x - car.x : car.x - other.x)
+      : (car.dir > 0 ? other.y - car.y : car.y - other.y);
+    return ahead > 0 && ahead < CAR_FOLLOW_GAP;
+  });
 }
 
 // small pole with the classic red/yellow/green stacked signal head - all
