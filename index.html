@@ -2814,13 +2814,25 @@ function drawRoads(camX, camY) {
     }
   });
 
+  // corner sidewalk patches at every intersection - the inner corner (the
+  // one actually touching the road crossing) gets a curb-style curve
+  // instead of a sharp right angle
   ctx.fillStyle = sidewalk;
+  const cornerR = Math.min(14, SIDEWALK_W);
   NUMBERED_STREETS.forEach(hs => {
     NAMED_STREETS.forEach(vs => {
-      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
-      ctx.fillRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W);
-      ctx.fillRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
-      ctx.fillRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W);
+      ctx.beginPath();
+      ctx.roundRect(vs.x - SIDEWALK_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W, [0, 0, cornerR, 0]);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(vs.x + ROAD_W - camX, hs.y - SIDEWALK_W - camY, SIDEWALK_W, SIDEWALK_W, [0, 0, 0, cornerR]);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(vs.x - SIDEWALK_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W, [0, cornerR, 0, 0]);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.roundRect(vs.x + ROAD_W - camX, hs.y + ROAD_W - camY, SIDEWALK_W, SIDEWALK_W, [cornerR, 0, 0, 0]);
+      ctx.fill();
     });
   });
 
@@ -2883,6 +2895,20 @@ function drawParkGround(camX, camY) {
 
   ctx.fillRect(px, py + PARK.h/2 - b/2, PARK.w, b);
   ctx.fillRect(px + PARK.w/2 - b/2, py, b, PARK.h);
+
+  // a couple of curved paths cutting corner-to-center, so the park isn't
+  // only the straight cross of walkways above
+  ctx.strokeStyle = '#c8b585';
+  ctx.lineWidth = b;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(px + 40, py + 40);
+  ctx.quadraticCurveTo(px + PARK.w * 0.32, py + PARK.h * 0.12, px + PARK.w / 2, py + PARK.h / 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(px + PARK.w - 40, py + PARK.h - 40);
+  ctx.quadraticCurveTo(px + PARK.w * 0.68, py + PARK.h * 0.88, px + PARK.w / 2, py + PARK.h / 2);
+  ctx.stroke();
 
   const ring = {
     x: PARK_POND.x - 50, y: PARK_POND.y - 50,
