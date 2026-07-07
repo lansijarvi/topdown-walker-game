@@ -2412,7 +2412,7 @@ function drawCar(cx, cy, facing, color, police) {
   const bodyColor = color || '#8f2e2e';
   ctx.save();
   ctx.translate(cx, cy - 8);
-  ctx.scale(1.7, 1.7);
+  ctx.scale(2.0, 2.0);
 
   if (facing === 'left' || facing === 'right') {
     const dir = facing === 'right' ? 1 : -1;
@@ -2500,12 +2500,13 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.ellipse(0, 4, 16, 26, 0, 0, Math.PI * 2);
     ctx.fill();
 
-    // round wheels peeking out at the corners
-    [[-17, -8], [14, -8], [-17, 14], [14, 14]].forEach(([wx, wy]) => {
+    // wheels tucked at the corners, flush with the body edge rather than
+    // sticking out past the silhouette the way they would from the side
+    [[-11, -16], [11, -16], [-11, 14], [11, 14]].forEach(([wx, wy]) => {
       ctx.fillStyle = '#0f0f0f';
-      ctx.beginPath(); ctx.arc(wx, wy, 6, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(wx, wy, 5, 0, Math.PI * 2); ctx.fill();
       ctx.fillStyle = '#c8c8c8';
-      ctx.beginPath(); ctx.arc(wx, wy, 3.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(wx, wy, 3, 0, Math.PI * 2); ctx.fill();
     });
 
     // main body - a plain rounded box instead of a flared hexagon
