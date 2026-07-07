@@ -2375,7 +2375,7 @@ function drawHeadlightBeam(x, y, dx, dy, len) {
   ctx.rotate(Math.atan2(dy, dx));
   const spread = 0.36;
   const grad = ctx.createLinearGradient(0, 0, len, 0);
-  grad.addColorStop(0, 'rgba(255,240,180,0.5)');
+  grad.addColorStop(0, 'rgba(255,240,180,1)');
   grad.addColorStop(1, 'rgba(255,240,180,0)');
   ctx.fillStyle = grad;
   ctx.beginPath();
@@ -2450,10 +2450,10 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillRect(9, -16, 8, 3);
 
     // headlight - a glowing lens plus a soft beam so it reads as lit up
-    drawHeadlightBeam(23, -3, 1, 0, 22);
+    drawHeadlightBeam(23, -3, 1, 0, 44);
     ctx.save();
     ctx.shadowColor = 'rgba(255,220,140,0.9)';
-    ctx.shadowBlur = 7;
+    ctx.shadowBlur = 14;
     ctx.fillStyle = '#ffe066';
     ctx.beginPath(); ctx.arc(23, -3, 3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
@@ -2489,10 +2489,10 @@ function drawMotorcycle(cx, cy, facing, color) {
     ctx.fillRect(-7, 3, 14, 11);
 
     // headlight - a glowing lens plus a soft beam so it reads as lit up
-    drawHeadlightBeam(0, -19, 0, -1, 18);
+    drawHeadlightBeam(0, -19, 0, -1, 36);
     ctx.save();
     ctx.shadowColor = 'rgba(255,220,140,0.9)';
-    ctx.shadowBlur = 7;
+    ctx.shadowBlur = 14;
     ctx.fillStyle = '#ffe066';
     ctx.beginPath(); ctx.arc(0, -19, 3, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
