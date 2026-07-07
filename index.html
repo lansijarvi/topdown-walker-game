@@ -3787,24 +3787,24 @@ function drawHUD() {
   // right-aligned, tucked into the gap just below the RELOAD/SHOOT
   // buttons and above the touch action row, instead of sitting over the
   // d-pad or floating in the middle of the screen
-  const slotW = 84, slotH = 46, gap = 8;
+  const slotW = 62, slotH = 34, gap = 6;
   const totalW = items.length * slotW + (items.length - 1) * gap;
   let sx = canvas.width - 16 - totalW;
-  const sy = canvas.height - 128;
+  const sy = canvas.height - 116;
   items.forEach(item => {
     drawPanel(sx, sy, slotW, slotH,
       item.active ? 'rgba(255,210,127,0.3)' : 'rgba(30,30,30,0.65)',
       item.active ? 'rgba(200,150,60,0.3)' : 'rgba(5,5,5,0.65)',
-      item.active ? '#ffd27f' : 'rgba(255,255,255,0.3)', 8);
+      item.active ? '#ffd27f' : 'rgba(255,255,255,0.3)', 6);
 
     ctx.textAlign = 'center';
-    ctx.font = 'bold 12px monospace';
+    ctx.font = 'bold 9px monospace';
     ctx.fillStyle = '#fff';
-    ctx.fillText(item.label, sx + slotW / 2, sy + 20);
+    ctx.fillText(item.label, sx + slotW / 2, sy + 14);
     if (item.sub) {
-      ctx.font = '10px monospace';
+      ctx.font = '8px monospace';
       ctx.fillStyle = item.active ? '#ffd27f' : '#aaa';
-      ctx.fillText(item.sub, sx + slotW / 2, sy + 36);
+      ctx.fillText(item.sub, sx + slotW / 2, sy + 26);
     }
     sx += slotW + gap;
   });
