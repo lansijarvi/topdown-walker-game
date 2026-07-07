@@ -242,6 +242,7 @@
   <div id="infoButtons">
     <button class="infoBtn" id="newGameBtn">New Game</button>
     <button class="infoBtn" id="renameBtn">Rename</button>
+    <button class="infoBtn" id="muteBtn">🔊</button>
   </div>
 </div>
 
@@ -296,6 +297,155 @@ window.addEventListener('orientationchange', () => setTimeout(resizeCanvas, 200)
 // phones/tablets and stay faint (but still usable) on desktop
 if ('ontouchstart' in window || navigator.maxTouchPoints > 0) {
   document.body.classList.add('touch');
+}
+
+// --- Audio ---
+// all sound is synthesized with the Web Audio API rather than loaded from
+// files, so the game stays a single self-contained HTML document. Browsers
+// require a user gesture before audio can play, so the context is created
+// lazily and resumed on the first key/click/touch rather than at page load.
+let audioCtx = null;
+let masterGain = null;
+let audioMuted = false;
+
+function getAudioCtx() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    masterGain = audioCtx.createGain();
+    masterGain.gain.value = audioMuted ? 0 : 0.5;
+    masterGain.connect(audioCtx.destination);
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
+function unlockAudioOnce() {
+  getAudioCtx();
+  window.removeEventListener('keydown', unlockAudioOnce);
+  window.removeEventListener('mousedown', unlockAudioOnce);
+  window.removeEventListener('touchstart', unlockAudioOnce);
+}
+window.addEventListener('keydown', unlockAudioOnce);
+window.addEventListener('mousedown', unlockAudioOnce);
+window.addEventListener('touchstart', unlockAudioOnce);
+
+function setAudioMuted(muted) {
+  audioMuted = muted;
+  if (masterGain) masterGain.gain.value = muted ? 0 : 0.5;
+}
+
+// short noise burst with a fast lowpass sweep - the classic synthesized
+// gunshot: a sharp crack that darkens as it decays
+function playGunshot() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const bufferSize = Math.floor(ctx.sampleRate * 0.15);
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / bufferSize, 2);
+  const noise = ctx.createBufferSource();
+  noise.buffer = buffer;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(3200, now);
+  filter.frequency.exponentialRampToValueAtTime(250, now + 0.15);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.6, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  noise.connect(filter).connect(gain).connect(masterGain);
+  noise.start(now);
+  noise.stop(now + 0.15);
+}
+
+// a single short square-wave blip, reused for both reload clicks and as
+// the building block for NPC "gibberish" talking
+function playClick(freq, delay, duration, vol) {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime + (delay || 0);
+  const osc = ctx.createOscillator();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(freq, now);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(vol || 0.15, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + (duration || 0.04));
+  osc.connect(gain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + (duration || 0.04) + 0.02);
+}
+
+function playReloadSound() {
+  playClick(900, 0, 0.03, 0.12);
+  playClick(650, 0.09, 0.04, 0.12);
+}
+
+// short descending, band-passed "oww" - not a real voice, just a pitch-drop
+// tone shaped to read as a pained grunt rather than a musical note
+function playHitSound() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(210 + Math.random() * 60, now);
+  osc.frequency.exponentialRampToValueAtTime(85, now + 0.18);
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 700;
+  filter.Q.value = 3.5;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.3, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+  osc.connect(filter).connect(gain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 0.2);
+}
+
+// Animal-Crossing-style "gibberish" chatter - a short burst of random-pitch
+// blips standing in for speech, played once whenever a new NPC line appears
+function playGibberish() {
+  if (audioMuted) return;
+  const count = 3 + Math.floor(Math.random() * 3);
+  for (let i = 0; i < count; i++) {
+    playClick(160 + Math.random() * 260, i * 0.09, 0.06, 0.08);
+  }
+}
+
+// looping vehicle engine drone - a single oscillator whose pitch and
+// volume track how fast the player is currently going, started/stopped
+// whenever they mount/dismount rather than re-created every frame
+let engineOsc = null, engineGain = null, engineFilter = null;
+function startEngine(kind) {
+  if (audioMuted || engineOsc) return;
+  const ctx = getAudioCtx();
+  engineOsc = ctx.createOscillator();
+  engineOsc.type = kind === 'car' ? 'sawtooth' : 'square';
+  engineOsc.frequency.value = 50;
+  engineFilter = ctx.createBiquadFilter();
+  engineFilter.type = 'lowpass';
+  engineFilter.frequency.value = kind === 'car' ? 500 : 900;
+  engineGain = ctx.createGain();
+  engineGain.gain.value = 0;
+  engineOsc.connect(engineFilter).connect(engineGain).connect(masterGain);
+  engineOsc.start();
+}
+function updateEngine(speedRatio) {
+  if (!engineOsc) return;
+  const ctx = getAudioCtx();
+  const freq = 50 + Math.max(0, Math.min(1, speedRatio)) * 140;
+  engineOsc.frequency.setTargetAtTime(freq, ctx.currentTime, 0.08);
+  engineGain.gain.setTargetAtTime(audioMuted ? 0 : 0.05 + speedRatio * 0.05, ctx.currentTime, 0.08);
+}
+function stopEngine() {
+  if (!engineOsc) return;
+  const ctx = getAudioCtx();
+  engineGain.gain.setTargetAtTime(0, ctx.currentTime, 0.1);
+  const osc = engineOsc;
+  setTimeout(() => { try { osc.stop(); } catch (e) {} }, 300);
+  engineOsc = null;
+  engineGain = null;
+  engineFilter = null;
 }
 
 const WORLD_W = 3700;
@@ -984,6 +1134,7 @@ function shoot() {
   }
   player.ammoInMag--;
   muzzleFlashUntil = performance.now() + 80;
+  playGunshot();
 
   const off = muzzleOffset(player.facing);
   bullets.push({
@@ -1002,6 +1153,7 @@ function reload() {
   if (player.ammoInMag === MAG_SIZE) return;
   player.spareMags--;
   player.ammoInMag = MAG_SIZE;
+  playReloadSound();
 }
 
 let scene = 'outside';
@@ -1038,6 +1190,7 @@ function toggleMotorcycle() {
   if (player.onMotorcycle) {
     player.onMotorcycle = false;
     motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
+    stopEngine();
   } else if (motorcycleParked) {
     const dist = Math.hypot(
       (player.x + player.w / 2) - motorcycleParked.x,
@@ -1046,6 +1199,7 @@ function toggleMotorcycle() {
     if (dist < MOUNT_RADIUS) {
       player.onMotorcycle = true;
       motorcycleParked = null;
+      startEngine('moto');
     }
   }
 }
@@ -1055,6 +1209,7 @@ function toggleCar() {
   if (player.onCar) {
     player.onCar = false;
     carParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.carColor };
+    stopEngine();
   } else if (carParked) {
     const dist = Math.hypot(
       (player.x + player.w / 2) - carParked.x,
@@ -1063,6 +1218,7 @@ function toggleCar() {
     if (dist < MOUNT_RADIUS) {
       player.onCar = true;
       carParked = null;
+      startEngine('car');
     }
   }
 }
@@ -1164,6 +1320,7 @@ function enterNode(key) {
   dialogueNodeKey = key;
   const node = dialogueTree[key];
   if (node && node.effect) node.effect(player);
+  if (node && node.speaker === 'npc') playGibberish();
   syncDialogueOptionsOverlay();
 }
 
@@ -1213,6 +1370,7 @@ function enterBuilding(b) {
   player.facing = 'down';
   player.onMotorcycle = false; // park it outside - nobody's riding through a doorway
   player.onCar = false;
+  stopEngine();
   infoEl.textContent = `Inside ${b.name}. Walk down to the door to leave.`;
 }
 
@@ -1292,6 +1450,7 @@ function applyImpact(entity, dirX, dirY, force) {
   entity.knockedDownUntil = performance.now() + KNOCKDOWN_MS;
   entity.recovered = false;
   entity.path = null;
+  playHitSound();
 }
 
 // call every frame for anyone who might currently be knocked down - slides
@@ -1454,6 +1613,11 @@ function update(timestamp, dt) {
     player.rideSpeed = 0;
   }
   const appliedSpeed = (player.onCar || player.onMotorcycle) ? player.rideSpeed : moveSpeed;
+
+  if (player.onCar || player.onMotorcycle) {
+    const maxSpeed = player.onCar ? player.carBoostSpeed : player.motoBoostSpeed;
+    updateEngine(player.rideSpeed / maxSpeed);
+  }
 
   if (scene === 'outside') {
     if (performance.now() > playerHitUntil) tryMoveOutside(dx * appliedSpeed * dt, dy * appliedSpeed * dt);
@@ -1618,6 +1782,7 @@ function update(timestamp, dt) {
           if (player.onMotorcycle) {
             player.onMotorcycle = false;
             motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
+            stopEngine();
           }
           player.money = Math.max(0, player.money - HIT_COST);
           player.finesOwed += JAYWALK_FINE;
@@ -3339,6 +3504,19 @@ document.getElementById('nameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') submitName();
 });
 document.getElementById('renameBtn').addEventListener('click', () => openNameOverlay(player.name));
+
+const MUTE_KEY = 'topdownWalkerMuted';
+const muteBtn = document.getElementById('muteBtn');
+function applyMuteButtonLabel() {
+  muteBtn.textContent = audioMuted ? '🔇' : '🔊';
+}
+muteBtn.addEventListener('click', () => {
+  setAudioMuted(!audioMuted);
+  localStorage.setItem(MUTE_KEY, audioMuted ? '1' : '0');
+  applyMuteButtonLabel();
+});
+setAudioMuted(localStorage.getItem(MUTE_KEY) === '1');
+applyMuteButtonLabel();
 
 loadGame();
 if (!player.name) openNameOverlay('');
