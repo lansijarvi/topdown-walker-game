@@ -237,7 +237,7 @@
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car, N for the map.</span>
+  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car, N for the map, X to wheelie on the bike.</span>
   <div id="nameDisplay"></div>
   <div id="infoButtons">
     <button class="infoBtn" id="newGameBtn">New Game</button>
@@ -274,6 +274,7 @@
   <button class="touchBtn" id="motoBtn">BIKE<br>(M)</button>
   <button class="touchBtn" id="carBtn">CAR<br>(C)</button>
   <button class="touchBtn" id="mapBtn">MAP<br>(N)</button>
+  <button class="touchBtn" id="wheelieBtn">WHEELIE<br>(X)</button>
 </div>
 
 <div id="dialogueOptions"></div>
@@ -1203,6 +1204,7 @@ const player = {
   spareMags: 0,
   hasMotorcycle: false,
   onMotorcycle: false,
+  wheelieUntil: 0,
   motoColor: '#8f2e2e',
   pendingMotoColor: '#8f2e2e',
   motoSpeed: 3.6,
@@ -1263,6 +1265,7 @@ function reload() {
 
 let scene = 'outside';
 let mapOpen = false;
+let wasBoostingOnBike = false;
 let currentBuilding = null;
 let nearbyNPC = null;
 let dialogueOpen = false;
@@ -1332,6 +1335,12 @@ function toggleCar() {
 function toggleMap() {
   if (dialogueOpen || awaitingName) return;
   mapOpen = !mapOpen;
+}
+
+const WHEELIE_DURATION = 900;
+function tryWheelie() {
+  if (!player.onMotorcycle || dialogueOpen) return;
+  player.wheelieUntil = performance.now() + WHEELIE_DURATION;
 }
 
 function pressInteract() {
@@ -1412,6 +1421,7 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'm') toggleMotorcycle();
   if (e.key.toLowerCase() === 'c') toggleCar();
   if (e.key.toLowerCase() === 'n') toggleMap();
+  if (e.key.toLowerCase() === 'x') tryWheelie();
 });
 
 window.addEventListener('keydown', e => {
@@ -1738,6 +1748,12 @@ function update(timestamp, dt) {
     const maxSpeed = player.onCar ? player.carBoostSpeed : player.motoBoostSpeed;
     updateEngine(player.rideSpeed / maxSpeed);
   }
+
+  // popping into a wheelie the moment you kick into a run on the bike,
+  // on top of the manual trigger from the WHEELIE button/key
+  const boostingOnBike = player.onMotorcycle && keys['shift'] && (dx !== 0 || dy !== 0);
+  if (boostingOnBike && !wasBoostingOnBike) tryWheelie();
+  wasBoostingOnBike = boostingOnBike;
 
   if (scene === 'outside') {
     if (performance.now() > playerHitUntil) tryMoveOutside(dx * appliedSpeed * dt, dy * appliedSpeed * dt);
@@ -3376,9 +3392,23 @@ function drawOutside() {
       if (player.onCar) {
         drawCar(px, py, player.facing, player.carColor);
       } else {
+        // wheelie: tilt the bike+rider back around the rear wheel, front
+        // end lifting up then settling back down over the duration
+        const wheelieLeft = player.wheelieUntil - performance.now();
+        const doingWheelie = player.onMotorcycle && wheelieLeft > 0 && (player.facing === 'left' || player.facing === 'right');
+        if (doingWheelie) {
+          const progress = 1 - wheelieLeft / WHEELIE_DURATION;
+          const dir = player.facing === 'right' ? 1 : -1;
+          const lift = Math.sin(progress * Math.PI) * 0.4;
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.rotate(-dir * lift);
+          ctx.translate(-px, -py);
+        }
         if (player.onMotorcycle) drawMotorcycle(px, py, player.facing, player.motoColor);
         drawBloodSpot(player, camX, camY);
         drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil, moving: player.moving });
+        if (doingWheelie) ctx.restore();
       }
     }
   });
@@ -3881,6 +3911,7 @@ bindTapButton('gunBtn', toggleGunEquip);
 bindTapButton('motoBtn', toggleMotorcycle);
 bindTapButton('carBtn', toggleCar);
 bindTapButton('mapBtn', toggleMap);
+bindTapButton('wheelieBtn', tryWheelie);
 
 const SAVE_KEY = 'topdownWalkerSave';
 let lastSaveFlashUntil = 0;
