@@ -380,28 +380,6 @@ function playReloadSound() {
   playClick(650, 0.09, 0.04, 0.12);
 }
 
-// short descending, band-passed "oww" - not a real voice, just a pitch-drop
-// tone shaped to read as a pained grunt rather than a musical note
-function playHitSound() {
-  if (audioMuted) return;
-  const ctx = getAudioCtx();
-  const now = ctx.currentTime;
-  const osc = ctx.createOscillator();
-  osc.type = 'sawtooth';
-  osc.frequency.setValueAtTime(210 + Math.random() * 60, now);
-  osc.frequency.exponentialRampToValueAtTime(85, now + 0.18);
-  const filter = ctx.createBiquadFilter();
-  filter.type = 'bandpass';
-  filter.frequency.value = 700;
-  filter.Q.value = 3.5;
-  const gain = ctx.createGain();
-  gain.gain.setValueAtTime(0.3, now);
-  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-  osc.connect(filter).connect(gain).connect(masterGain);
-  osc.start(now);
-  osc.stop(now + 0.2);
-}
-
 // Animal-Crossing-style "gibberish" chatter - a short burst of random-pitch
 // blips standing in for speech, played once whenever a new NPC line appears
 function playGibberish() {
@@ -410,6 +388,112 @@ function playGibberish() {
   for (let i = 0; i < count; i++) {
     playClick(160 + Math.random() * 260, i * 0.09, 0.06, 0.08);
   }
+}
+
+// a background traffic car sweeping past close to the player - pitch rises
+// then falls away, like a real vehicle passing by
+function playPassingCar() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(90, now);
+  osc.frequency.linearRampToValueAtTime(150, now + 0.15);
+  osc.frequency.linearRampToValueAtTime(70, now + 0.55);
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 450;
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.001, now);
+  gain.gain.linearRampToValueAtTime(0.1, now + 0.1);
+  gain.gain.linearRampToValueAtTime(0.001, now + 0.55);
+  osc.connect(filter).connect(gain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 0.55);
+}
+
+// a light two-note car horn honk
+function playHonk() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  [440, 550].forEach(freq => {
+    const osc = ctx.createOscillator();
+    osc.type = 'square';
+    osc.frequency.value = freq;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.07, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+    osc.connect(gain).connect(masterGain);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  });
+}
+
+// soft footstep tap for the player walking on foot (not while riding)
+function playFootstep() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  const osc = ctx.createOscillator();
+  osc.type = 'triangle';
+  osc.frequency.setValueAtTime(110 + Math.random() * 40, now);
+  const gain = ctx.createGain();
+  gain.gain.setValueAtTime(0.05, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+  osc.connect(gain).connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 0.07);
+}
+
+// two-tone shop-door chime, played on entering or leaving a building
+function playDoorChime() {
+  if (audioMuted) return;
+  const ctx = getAudioCtx();
+  const now = ctx.currentTime;
+  [660, 880].forEach((freq, i) => {
+    const t = now + i * 0.08;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine';
+    osc.frequency.value = freq;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.12, t + 0.02);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.3);
+    osc.connect(gain).connect(masterGain);
+    osc.start(t);
+    osc.stop(t + 0.32);
+  });
+}
+
+// continuous, very quiet filtered-noise drone - distant city traffic hum,
+// running the whole time the player is outside so the world doesn't feel
+// dead silent between the more specific sound effects
+let ambientNoiseSource = null, ambientGain = null;
+function startAmbientHum() {
+  if (audioMuted || ambientNoiseSource) return;
+  const ctx = getAudioCtx();
+  const bufferSize = ctx.sampleRate * 2;
+  const buffer = ctx.createBuffer(1, bufferSize, ctx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < bufferSize; i++) data[i] = Math.random() * 2 - 1;
+  ambientNoiseSource = ctx.createBufferSource();
+  ambientNoiseSource.buffer = buffer;
+  ambientNoiseSource.loop = true;
+  const filter = ctx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 220;
+  ambientGain = ctx.createGain();
+  ambientGain.gain.value = audioMuted ? 0 : 0.03;
+  ambientNoiseSource.connect(filter).connect(ambientGain).connect(masterGain);
+  ambientNoiseSource.start();
+}
+function stopAmbientHum() {
+  if (!ambientNoiseSource) return;
+  try { ambientNoiseSource.stop(); } catch (e) {}
+  ambientNoiseSource = null;
+  ambientGain = null;
 }
 
 // looping vehicle engine drone - a single oscillator whose pitch and
@@ -1371,6 +1455,8 @@ function enterBuilding(b) {
   player.onMotorcycle = false; // park it outside - nobody's riding through a doorway
   player.onCar = false;
   stopEngine();
+  stopAmbientHum();
+  playDoorChime();
   infoEl.textContent = `Inside ${b.name}. Walk down to the door to leave.`;
 }
 
@@ -1386,6 +1472,8 @@ function exitBuilding() {
   dialogueTree = null;
   dialogueNodeKey = 'start';
   syncDialogueOptionsOverlay();
+  startAmbientHum();
+  playDoorChime();
   infoEl.textContent = `WASD / Arrows to move. Walk into a building's door to go inside.`;
 }
 
@@ -1450,7 +1538,6 @@ function applyImpact(entity, dirX, dirY, force) {
   entity.knockedDownUntil = performance.now() + KNOCKDOWN_MS;
   entity.recovered = false;
   entity.path = null;
-  playHitSound();
 }
 
 // call every frame for anyone who might currently be knocked down - slides
@@ -1593,6 +1680,11 @@ function update(timestamp, dt) {
   if (player.moving) {
     if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
     else player.facing = dy > 0 ? 'down' : 'up';
+  }
+
+  if (player.moving && !player.onCar && !player.onMotorcycle && timestamp > (player.nextFootstepAt || 0)) {
+    playFootstep();
+    player.nextFootstepAt = timestamp + (keys['shift'] ? 220 : 340);
   }
 
   const moveSpeed = player.onCar
@@ -1763,6 +1855,14 @@ function update(timestamp, dt) {
           if (car.y < car.minY) { car.y = car.minY; car.dir = 1; }
         }
         car.x += (trafficLane(car) - car.x) * 0.06 * dt;
+      }
+
+      // a car passing close by plays once, then cools down for a bit so it
+      // doesn't spam the same whoosh every frame while idling nearby at a light
+      if (!stopped && timestamp > (car.soundCooldown || 0) && Math.hypot(car.x - ppx, car.y - ppy) < 160) {
+        playPassingCar();
+        if (Math.random() < 0.2) playHonk();
+        car.soundCooldown = timestamp + 4000;
       }
     });
 
@@ -3521,6 +3621,7 @@ applyMuteButtonLabel();
 loadGame();
 if (!player.name) openNameOverlay('');
 else updateNameDisplay();
+if (scene === 'outside') startAmbientHum();
 setInterval(saveGame, 5000);
 window.addEventListener('beforeunload', saveGame);
 
