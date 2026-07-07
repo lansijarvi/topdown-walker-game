@@ -1052,7 +1052,18 @@ const buildings = [
   {x: 560, y: 1050, w: 280, h: 65, wallH: 45, roof: '#5f7a5f', wall: '#3a503a', name: 'Library', floor: '#4a3f33', npcs: [{name:'Librarian Lena', color:'#c2905f'}]},
   {x: 2610, y: 1050, w: 170, h: 65, wallH: 45, roof: '#c2905f', wall: '#8f5f3a', name: 'School', floor: '#e8e8d8', npcs: [{name:'Teacher Tess', color:'#5f8fc2'}]},
   {x: 2870, y: 1050, w: 220, h: 65, wallH: 45, roof: '#c25f5f', wall: '#8f3a3a', name: 'Fire Station', floor: '#3a3a3a', npcs: [{name:'Firefighter Finn', color:'#c25f5f', gender:'m', big:true}]},
-  {x: 3150, y: 1050, w: 200, h: 65, wallH: 45, roof: '#8a8a9a', wall: '#5f5f70', name: 'Church', floor: '#d8d0c0', npcs: [{name:'Father Fred', color:'#2a2a2a', gender:'m'}]}
+  {x: 3150, y: 1050, w: 200, h: 65, wallH: 45, roof: '#8a8a9a', wall: '#5f5f70', name: 'Church', floor: '#d8d0c0', npcs: [{name:'Father Fred', color:'#2a2a2a', gender:'m'}]},
+
+  // --- flanking the vertical streets (Oak/Pine/Elm/Maple) - doors face
+  // sideways toward the road they front instead of the usual south wall ---
+  {x: 170,  y: 1480, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c25f9a', wall: '#8f3a70', name: 'Flower Shop',      floor: '#f0e0e8', npcs: [{name:'Florist Fiona', color:'#c25f9a'}]},
+  {x: 520,  y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5fc2c2', wall: '#3a8f8f', name: 'Ice Cream Parlor', floor: '#e0f0f0', npcs: [{name:'Scoop Sadie',   color:'#5fc2c2'}]},
+  {x: 670,  y: 1160, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c2795f', wall: '#8f4a3a', name: 'Barbecue Joint',   floor: '#e8d0b8', npcs: [{name:'Pitmaster Paul', color:'#c2795f'}]},
+  {x: 1020, y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5f7ac2', wall: '#3a4a8f', name: 'Comic Shop',       floor: '#d8d8e8', npcs: [{name:'Collector Cody', color:'#5f7ac2'}]},
+  {x: 1780, y: 20,   w: 60,  h: 130, wallH: 40, doorSide: 'east', roof: '#8f8f5f', wall: '#5f5f3a', name: 'Newsstand',        floor: '#d0d0b8', npcs: [{name:'Vendor Vince',   color:'#8f8f5f'}]},
+  {x: 2020, y: 1140, w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#9a5fc2', wall: '#6a3a8f', name: 'Tailor Shop',      floor: '#e0d8f0', npcs: [{name:'Tailor Tina',    color:'#9a5fc2'}]},
+  {x: 2170, y: 1270, w: 150, h: 130, wallH: 60, doorSide: 'east', roof: '#c2a05f', wall: '#8f703a', name: 'Hardware Store',   floor: '#d8c8a8', npcs: [{name:'Hardware Hal',   color:'#c2a05f'}]},
+  {x: 2520, y: 20,   w: 150, h: 130, wallH: 60, doorSide: 'west', roof: '#5fc27a', wall: '#3a8f4a', name: 'Music Store',      floor: '#d0e8d8', npcs: [{name:'DJ Dana',        color:'#5fc27a'}]}
 ];
 
 buildings.forEach(b => b.npcs.forEach(n => {
@@ -1116,8 +1127,54 @@ const citizens = [
   knockedDownUntil: 0
 }));
 
+// which edge of the building's box the door/entrance sits on - 'south' is
+// the original convention (all older buildings), 'north'/'east'/'west' let
+// newer buildings front onto a vertical street instead
+const DOOR_ENTRY_FACING = { south: 'up', north: 'down', east: 'left', west: 'right' };
+
+function doorOutsidePoint(b) {
+  const dz = b.doorZone;
+  switch (b.doorSide) {
+    case 'north': return { x: dz.x + dz.w / 2, y: dz.y };
+    case 'east':  return { x: dz.x + dz.w,     y: dz.y + dz.h / 2 };
+    case 'west':  return { x: dz.x,            y: dz.y + dz.h / 2 };
+    default:      return { x: dz.x + dz.w / 2, y: dz.y + dz.h };
+  }
+}
+
 buildings.forEach(b => {
-  b.doorZone = { x: b.x + b.w/2 - 18, y: b.y + b.h + b.wallH - 10, w: 36, h: 20 };
+  b.doorSide = b.doorSide || 'south';
+
+  // small stable-but-varied gap between the building and the sidewalk so
+  // the entrance doesn't open directly onto the street - seeded from the
+  // building's own position so it's the same every time the game loads
+  // without needing to be part of the save data
+  const yardRaw = hashNoise(b.x * 3.1 + 7.7, b.y * 5.3 + 2.1);
+  b.yardDepth = Math.min(10 + yardRaw * 14, b.wallH - 24);
+  const wallDepth = b.wallH - b.yardDepth;
+
+  if (b.doorSide === 'south') {
+    b.full = { x: b.x, y: b.y, w: b.w, h: b.h + wallDepth };
+    b.doorZone = { x: b.x + b.w / 2 - 18, y: b.full.y + b.full.h - 10, w: 36, h: 20 };
+    b.yardRect = { x: b.x, y: b.full.y + b.full.h, w: b.w, h: b.yardDepth };
+    b.pathRect = { x: b.x + b.w / 2 - 9, y: b.yardRect.y, w: 18, h: b.yardDepth };
+  } else if (b.doorSide === 'north') {
+    b.full = { x: b.x, y: b.y + b.yardDepth, w: b.w, h: b.h + wallDepth };
+    b.doorZone = { x: b.x + b.w / 2 - 18, y: b.full.y - 10, w: 36, h: 20 };
+    b.yardRect = { x: b.x, y: b.y, w: b.w, h: b.yardDepth };
+    b.pathRect = { x: b.x + b.w / 2 - 9, y: b.y, w: 18, h: b.yardDepth };
+  } else if (b.doorSide === 'east') {
+    b.full = { x: b.x, y: b.y, w: b.w + wallDepth, h: b.h };
+    b.doorZone = { x: b.full.x + b.full.w - 10, y: b.y + b.h / 2 - 18, w: 20, h: 36 };
+    b.yardRect = { x: b.full.x + b.full.w, y: b.y, w: b.yardDepth, h: b.h };
+    b.pathRect = { x: b.yardRect.x, y: b.y + b.h / 2 - 9, w: b.yardDepth, h: 18 };
+  } else if (b.doorSide === 'west') {
+    b.full = { x: b.x + b.yardDepth, y: b.y, w: b.w + wallDepth, h: b.h };
+    b.doorZone = { x: b.full.x - 10, y: b.y + b.h / 2 - 18, w: 20, h: 36 };
+    b.yardRect = { x: b.x, y: b.y, w: b.yardDepth, h: b.h };
+    b.pathRect = { x: b.x, y: b.y + b.h / 2 - 9, w: b.yardDepth, h: 18 };
+  }
+
   b.npcs.forEach((n, i) => {
     n.x = 80 + (i % 3) * 140;
     n.y = 100 + Math.floor(i / 3) * 80;
@@ -1474,14 +1531,26 @@ function enterBuilding(b) {
   stopEngine();
   stopAmbientHum();
   playDoorChime();
-  infoEl.textContent = `Inside ${b.name}. Walk down to the door to leave.`;
+  infoEl.textContent = `Inside ${b.name}. Walk to the door to leave.`;
 }
+
+// the facing the player ends up with after stepping back outside - simply
+// the opposite of whatever direction leads INTO the door
+const DOOR_EXIT_FACING = { south: 'down', north: 'up', east: 'right', west: 'left' };
+const DOOR_EXIT_OFFSET = {
+  south: (p, player) => ({ x: p.x - player.w / 2, y: p.y + 12 }),
+  north: (p, player) => ({ x: p.x - player.w / 2, y: p.y - 12 - player.h }),
+  east:  (p, player) => ({ x: p.x + 12,            y: p.y - player.h / 2 }),
+  west:  (p, player) => ({ x: p.x - 12 - player.w,  y: p.y - player.h / 2 })
+};
 
 function exitBuilding() {
   const b = currentBuilding;
-  player.x = b.doorZone.x + b.doorZone.w / 2 - player.w / 2;
-  player.y = b.doorZone.y + b.doorZone.h + 12;
-  player.facing = 'down';
+  const outside = doorOutsidePoint(b);
+  const pos = DOOR_EXIT_OFFSET[b.doorSide](outside, player);
+  player.x = pos.x;
+  player.y = pos.y;
+  player.facing = DOOR_EXIT_FACING[b.doorSide];
   scene = 'outside';
   currentBuilding = null;
   nearbyNPC = null;
@@ -1510,8 +1579,7 @@ function tryMoveOutside(dx, dy) {
   let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
   next.x = Math.max(0, Math.min(WORLD_W - player.w, next.x));
   let blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
-    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+    return rectsOverlap(next, b.full) && !rectsOverlap(next, b.doorZone);
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
   if (!blocked) player.x = next.x;
@@ -1519,8 +1587,7 @@ function tryMoveOutside(dx, dy) {
   next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
   next.y = Math.max(0, Math.min(WORLD_H - player.h, next.y));
   blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallH };
-    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
+    return rectsOverlap(next, b.full) && !rectsOverlap(next, b.doorZone);
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
   if (!blocked) player.y = next.y;
@@ -1640,8 +1707,7 @@ function update(timestamp, dt) {
       b.npcs = b.npcs.filter(n => !(n.isCitizen && n.citizenRef === c));
       c.state = 'wander';
       c.insideBuilding = null;
-      c.x = b.doorZone.x + b.doorZone.w / 2;
-      c.y = b.doorZone.y + b.doorZone.h;
+      { const p = doorOutsidePoint(b); c.x = p.x; c.y = p.y; }
       c.path = null;
       c.nextDecision = 0;
     }
@@ -1733,7 +1799,7 @@ function update(timestamp, dt) {
 
     const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
     for (const b of buildings) {
-      if (player.facing === 'up' && rectsOverlap(playerRect, b.doorZone)) {
+      if (player.facing === DOOR_ENTRY_FACING[b.doorSide] && rectsOverlap(playerRect, b.doorZone)) {
         enterBuilding(b);
         break;
       }
@@ -1755,8 +1821,9 @@ function update(timestamp, dt) {
         let destX, destY;
         if (roll < 0.2) {
           const b = buildings[Math.floor(Math.random() * buildings.length)];
-          destX = b.doorZone.x + b.doorZone.w / 2;
-          destY = b.doorZone.y + b.doorZone.h;
+          const p = doorOutsidePoint(b);
+          destX = p.x;
+          destY = p.y;
           c.enterTarget = b;
         } else if (roll < 0.45) {
           destX = c.homeX;
@@ -2577,32 +2644,69 @@ const NIGHTLIFE_SIGN_COLORS = {
 function isPlayerBehindBuilding(b) {
   const ppx = player.x + player.w / 2;
   const ppy = player.y + player.h;
-  const withinX = ppx > b.x + 4 && ppx < b.x + b.w - 4;
-  const withinFront = ppy >= b.y + b.h - 10 && ppy <= b.y + b.h + b.wallH + 24;
+  const f = b.full;
+  const withinX = ppx > f.x + 4 && ppx < f.x + f.w - 4;
+  const withinFront = ppy >= f.y + f.h - 44 && ppy <= f.y + f.h + 24;
   return withinX && withinFront;
 }
 
 function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
-  const sx = b.x - camX;
-  const sy = b.y - camY;
+  const f = b.full;
+  const sx = f.x - camX;
+  const sy = f.y - camY;
   nightFactor = nightFactor || 0;
+  const side = b.doorSide;
+  const horizontal = side === 'south' || side === 'north';
+
+  // yard + connecting path between the sidewalk and the door, drawn first
+  // so the building sits on top of it - this is the "little space from the
+  // sidewalk" gap, sized per-building via b.yardDepth
+  const yr = b.yardRect;
+  ctx.fillStyle = '#5a8f4f';
+  ctx.fillRect(yr.x - camX, yr.y - camY, yr.w, yr.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.06)';
+  for (let ix = 0; ix < yr.w; ix += 9) {
+    for (let iy = 0; iy < yr.h; iy += 9) {
+      if (hashNoise(yr.x + ix, yr.y + iy) > 0.6) ctx.fillRect(yr.x + ix - camX, yr.y + iy - camY, 2, 2);
+    }
+  }
+  ctx.fillStyle = '#9a8f74';
+  ctx.fillRect(b.pathRect.x - camX, b.pathRect.y - camY, b.pathRect.w, b.pathRect.h);
 
   ctx.save();
   if (faded) ctx.globalAlpha = 0.45;
 
-  // soft ground shadow cast toward the bottom-right, grounding the
-  // building instead of it looking like it's floating on the grass/sidewalk
-  const shadowGrad = ctx.createLinearGradient(sx, sy + b.h + b.wallH, sx, sy + b.h + b.wallH + 16);
+  // soft ground shadow, grounding the building instead of it looking like
+  // it's floating on the grass/sidewalk
+  const shadowGrad = ctx.createLinearGradient(sx, sy + f.h, sx, sy + f.h + 16);
   shadowGrad.addColorStop(0, 'rgba(0,0,0,0.28)');
   shadowGrad.addColorStop(1, 'rgba(0,0,0,0)');
   ctx.fillStyle = shadowGrad;
-  ctx.fillRect(sx + 6, sy + b.h + b.wallH, b.w, 16);
+  ctx.fillRect(sx + 6, sy + f.h, f.w, 16);
 
   ctx.fillStyle = b.wall;
-  ctx.fillRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.fillRect(sx, sy, f.w, f.h);
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
   ctx.lineWidth = 2;
-  ctx.strokeRect(sx, sy, b.w, b.h + b.wallH);
+  ctx.strokeRect(sx, sy, f.w, f.h);
+
+  // roofRect is the taller/deeper part of the box away from the door;
+  // wallRect is the thinner strip against the door's edge that carries the
+  // windows and doorway - which edge that strip sits on depends on doorSide
+  let roofRect, wallRect;
+  if (side === 'south') {
+    roofRect = { x: sx, y: sy, w: f.w, h: b.h };
+    wallRect = { x: sx, y: sy + b.h, w: f.w, h: f.h - b.h };
+  } else if (side === 'north') {
+    wallRect = { x: sx, y: sy, w: f.w, h: f.h - b.h };
+    roofRect = { x: sx, y: sy + wallRect.h, w: f.w, h: b.h };
+  } else if (side === 'east') {
+    roofRect = { x: sx, y: sy, w: b.w, h: f.h };
+    wallRect = { x: sx + b.w, y: sy, w: f.w - b.w, h: f.h };
+  } else {
+    wallRect = { x: sx, y: sy, w: f.w - b.w, h: f.h };
+    roofRect = { x: sx + wallRect.w, y: sy, w: b.w, h: f.h };
+  }
 
   // windows glow warmer and brighter as night falls, with a soft halo once
   // it's dark enough to actually read as "lit up" rather than just yellow
@@ -2613,24 +2717,44 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
     ctx.shadowBlur = 6 + nightFactor * 8;
   }
   ctx.fillStyle = `rgba(255, 235, 170, ${(0.5 + nightFactor * 0.45).toFixed(3)})`;
-  for (let wx = sx + 16; wx < sx + b.w - 16; wx += winW + 20) {
-    ctx.fillRect(wx, sy + b.h + 14, winW, winH);
+  if (horizontal) {
+    const wy = side === 'south' ? wallRect.y + 14 : wallRect.y + wallRect.h - 14 - winH;
+    for (let wx = sx + 16; wx < sx + f.w - 16; wx += winW + 20) ctx.fillRect(wx, wy, winW, winH);
+  } else {
+    const wx = wallRect.x + (wallRect.w - winW) / 2;
+    for (let wy = sy + 16; wy < sy + f.h - 16; wy += winH + 20) ctx.fillRect(wx, wy, winW, winH);
   }
   ctx.restore();
 
+  // door, with a slightly recessed alcove and a small stoop where it meets
+  // the path, so the entrance reads as an actual indentation in the wall
   const dz = b.doorZone;
+  const doorRect = horizontal
+    ? { x: dz.x - camX, y: wallRect.y, w: dz.w, h: wallRect.h }
+    : { x: wallRect.x, y: dz.y - camY, w: wallRect.w, h: dz.h };
+  ctx.fillStyle = shadeColor(b.wall, -20);
+  if (horizontal) ctx.fillRect(doorRect.x - 4, doorRect.y, doorRect.w + 8, doorRect.h);
+  else ctx.fillRect(doorRect.x, doorRect.y - 4, doorRect.w, doorRect.h + 8);
   ctx.fillStyle = '#2a1f18';
-  ctx.fillRect(dz.x - camX, sy + b.h, dz.w, b.wallH);
+  ctx.fillRect(doorRect.x, doorRect.y, doorRect.w, doorRect.h);
+  ctx.fillStyle = 'rgba(200,190,170,0.5)';
+  if (horizontal) {
+    const matY = side === 'south' ? doorRect.y + doorRect.h - 4 : doorRect.y;
+    ctx.fillRect(doorRect.x - 2, matY, doorRect.w + 4, 4);
+  } else {
+    const matX = side === 'east' ? doorRect.x + doorRect.w - 4 : doorRect.x;
+    ctx.fillRect(matX, doorRect.y - 2, 4, doorRect.h + 4);
+  }
 
   ctx.fillStyle = b.roof;
-  ctx.fillRect(sx, sy, b.w, b.h);
+  ctx.fillRect(roofRect.x, roofRect.y, roofRect.w, roofRect.h);
   ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-  ctx.strokeRect(sx, sy, b.w, b.h);
+  ctx.strokeRect(roofRect.x, roofRect.y, roofRect.w, roofRect.h);
   ctx.fillStyle = 'rgba(255,255,255,0.12)';
-  ctx.fillRect(sx, sy, b.w, 8);
+  ctx.fillRect(sx, sy, f.w, 8);
 
   if (b.name) {
-    const labelX = sx + b.w / 2;
+    const labelX = sx + f.w / 2;
     const labelY = sy - 10;
     ctx.font = 'bold 14px monospace';
     ctx.textAlign = 'center';
