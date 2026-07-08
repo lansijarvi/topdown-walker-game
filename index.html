@@ -236,13 +236,35 @@
     display: none;
   }
 
-  /* sits clear to the right of the d-pad with real breathing room, rather
-     than crowded right up against it or lost in the action button row */
+  /* aligned directly above TALK (the first/leftmost button in the action
+     row) using the same right-edge math as that row, so it stays clear of
+     everything else regardless of screen width - a fixed left: position
+     worked in landscape but landed right on top of the action buttons on
+     a narrower portrait phone screen */
   #wheelieBtn {
     position: fixed;
-    left: 220px;
-    bottom: 56px;
+    right: 264px;
+    bottom: 82px;
     z-index: 10;
+  }
+
+  /* the d-pad and the action-button row are wide enough that they overlap
+     on every common phone width in portrait (the d-pad's right edge sits
+     past where the action row's left edge lands) - shrink both so they
+     actually fit side by side instead of stacking on top of each other */
+  @media (max-width: 480px) {
+    #dpad { width: 110px; height: 110px; }
+    #dpad button { width: 38px; height: 38px; font-size: 14px; }
+    #dpadUp    { left: 36px; top: 0; }
+    #dpadDown  { left: 36px; top: 72px; }
+    #dpadLeft  { left: 0; top: 36px; }
+    #dpadRight { left: 72px; top: 36px; }
+    #dpadRun   { left: 36px; top: 36px; font-size: 8px; }
+
+    #actionButtons { gap: 6px; }
+    .touchBtn { width: 40px; height: 40px; font-size: 9px; line-height: 1.15; }
+
+    #wheelieBtn { right: 200px; bottom: 64px; }
   }
 </style>
 </head>
