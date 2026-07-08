@@ -2543,8 +2543,9 @@ function drawMotorcycle(cx, cy, facing, color, lit) {
 
 // simple top-down car, boxier and wider than the motorcycle, four wheels
 // visible in the side profile and a windshield band in every orientation
-function drawCar(cx, cy, facing, color, police) {
+function drawCar(cx, cy, facing, color, police, nightFactor) {
   const bodyColor = color || '#8f2e2e';
+  const lit = (nightFactor || 0) > 0.3;
   const fenderColor = shadeColor(bodyColor, -22);
   ctx.save();
   ctx.translate(cx, cy - 8);
@@ -2633,11 +2634,26 @@ function drawCar(cx, cy, facing, color, police) {
       ctx.beginPath(); ctx.arc(wx, 11, 2, 0, Math.PI * 2); ctx.fill();
     });
 
-    // headlight / taillight
-    ctx.fillStyle = '#ffe066';
-    ctx.beginPath(); ctx.arc(28, 4, 3, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = '#c23a3a';
-    ctx.beginPath(); ctx.arc(-28, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+    // headlight / taillight - glowing with a beam once it's dark enough,
+    // just plain lenses during the day
+    if (lit) {
+      drawHeadlightBeam(28, 4, 1, 0, 40);
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,220,140,0.9)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(28, 4, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.shadowColor = 'rgba(255,60,60,0.9)';
+      ctx.shadowBlur = 8;
+      ctx.fillStyle = '#ff4040';
+      ctx.beginPath(); ctx.arc(-28, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(28, 4, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#c23a3a';
+      ctx.beginPath(); ctx.arc(-28, 4, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
 
     if (police) {
       // black-and-white door panel plus a red/blue light bar on the roof
@@ -2695,10 +2711,23 @@ function drawCar(cx, cy, facing, color, police) {
     ctx.lineWidth = 1;
     ctx.strokeRect(-13, -11, 26, 13);
 
-    // headlights
-    ctx.fillStyle = '#ffe066';
-    ctx.beginPath(); ctx.arc(-9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+    // headlights - glowing with a beam once it's dark enough, just plain
+    // lenses during the day
+    if (lit) {
+      drawHeadlightBeam(-9, -23, 0, -1, 34);
+      drawHeadlightBeam(9, -23, 0, -1, 34);
+      ctx.save();
+      ctx.shadowColor = 'rgba(255,220,140,0.9)';
+      ctx.shadowBlur = 12;
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(-9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    } else {
+      ctx.fillStyle = '#ffe066';
+      ctx.beginPath(); ctx.arc(-9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.arc(9, -23, 2.5, 0, Math.PI * 2); ctx.fill();
+    }
 
     if (police) {
       // black hood panel plus a red/blue light bar across the roof
@@ -3475,16 +3504,16 @@ function drawOutside() {
     } else if (d.type === 'parkedmoto') {
       drawMotorcycle(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
     } else if (d.type === 'parkedcar') {
-      drawCar(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
+      drawCar(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color, false, nightFactor);
     } else if (d.type === 'trafficcar') {
       const car = d.obj;
       const facing = car.axis === 'h' ? (car.dir > 0 ? 'right' : 'left') : (car.dir > 0 ? 'down' : 'up');
-      drawCar(car.x - camX, car.y - camY, facing, car.color, car.police);
+      drawCar(car.x - camX, car.y - camY, facing, car.color, car.police, nightFactor);
     } else {
       const px = player.x + player.w / 2 - camX;
       const py = player.y + player.h - camY;
       if (player.onCar) {
-        drawCar(px, py, player.facing, player.carColor);
+        drawCar(px, py, player.facing, player.carColor, false, nightFactor);
       } else {
         // wheelie: tilt the bike+rider back around the rear wheel, front
         // end lifting up then settling back down over the duration
