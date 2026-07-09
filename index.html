@@ -1095,7 +1095,7 @@ const buildings = [
   {x: 3180, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
   {x: 1170, y: 190, w: 220, h: 100, wallH: 90, roof: '#8a7a58', wall: '#6a5c40', name: 'Grocery Store', floor: '#4a4433', npcs: [{name:'Stan the Stock Boy', color:'#5fa8c2'}, {name:'Cart Kid Cassie', color:'#c2a05f'}]},
   {x: 1660, y: 180, w: 240, h: 110,wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Restaurant', floor: '#3a2f22', npcs: [{name:'Waiter Waldo', color:'#c2c25f'}, {name:'Chef Chuck', color:'#c25f5f'}],
-    ...tableSet(tableAt(120, 150), tableAt(380, 150), tableAt(120, 270), tableAt(380, 270))},
+    ...tableSet(tableAt(120, 120), tableAt(380, 120), tableAt(120, 205), tableAt(380, 205))},
   {x: 2700, y: 200, w: 220, h: 100, wallH: 80, roof: '#8a7a58', wall: '#6a5c40', name: 'Gun Store', floor: '#3a3a3a', npcs: [{name:'Gunny Sue', color:'#8f8f5f', dialogue: gunStoreTree}]},
   {x: 2170, y: 220, w: 180, h: 90, wallH: 70, roof: '#6a5a48', wall: '#4a3f30', name: 'Coffee Shop', floor: '#3a2f22', npcs: [{name:'Barista Beth', color:'#c2905f'}]},
   {x: 1410, y: 190, w: 200, h: 100, wallH: 80, roof: '#5f8a6a', wall: '#40684a', name: 'Pet Store', floor: '#3a3a30', npcs: [{name:'Pet Store Penny', color:'#8fc25f'}]},
@@ -1104,12 +1104,12 @@ const buildings = [
     {name:'Old Man Gus', color:'#a0a0a0'}, {name:'Regular Rita', color:'#c25f5f'},
     {name:'Barkeep Hank', color:'#8f7550', dialogue: beerOnlyTree}
   ], bar: { x: 110, y: 50, w: 280, h: 40, orientation: 'horizontal' },
-    ...tableSet(tableAt(100, 220), tableAt(250, 290), tableAt(400, 220))},
+    ...tableSet(tableAt(100, 165), tableAt(250, 150), tableAt(400, 165))},
   {x: 1110, y: 760, w: 200, h: 90,  wallH: 70, roof: '#8a7a58', wall: '#6a5c40', name: 'Bar', floor: '#332a22', npcs: [{
     name:'Bartender Bree', color:'#5f8fc2', dialogue: breeTree,
     getStartKey: (p) => p.traits.tattoo === 'skull' ? 'startSkull' : p.traits.tattoo === 'flower' ? 'startFlower' : 'startNone'
   }], bar: { x: 110, y: 50, w: 280, h: 40 },
-    ...tableSet(tableAt(100, 220), tableAt(400, 220))},
+    ...tableSet(tableAt(100, 165), tableAt(400, 165))},
   {x: 1320, y: 760, w: 130, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Strip Club', floor: '#2a1a2a', npcs: [
     {name:'Bouncer Bruno', color:'#3a3a3a', gender: 'm', hairstyle: 'bald', big: true},
     {name:'Dancer Destiny', color:'#e05fa0', bikini: true, bikiniColor: '#e05fa0'},
@@ -1162,7 +1162,7 @@ const buildings = [
   {x: 100,  y: 2390, w: 260, h: 105, wallH: 65, roof: '#5f7a9a', wall: '#3f5570', name: 'Furniture Store', floor: '#e8d8c0', npcs: [{name:'Salesman Sal', color:'#5f7a9a', dialogue: furnitureStoreTree}]},
   {x: 1300, y: 2410, w: 220, h: 95,  wallH: 55, roof: '#5f9ac2', wall: '#3a708f', name: 'Toy Store', floor: '#e0e8f0', npcs: [{name:'Clerk Chip', color:'#5f9ac2'}]},
   {x: 2680, y: 2400, w: 240, h: 100, wallH: 60, roof: '#c25f5f', wall: '#8f3a3a', name: 'Pizza Place', floor: '#e0d8c8', npcs: [{name:'Tony the Cook', color:'#c25f5f', gender:'m'}],
-    ...tableSet(tableAt(120, 220), tableAt(380, 220))},
+    ...tableSet(tableAt(120, 165), tableAt(380, 165))},
   {x: 4070, y: 2420, w: 200, h: 90,  wallH: 50, roof: '#5fc27a', wall: '#3a8f4a', name: 'Vet Clinic', floor: '#e8e8e8', npcs: [{name:'Doc Daisy', color:'#5fc27a'}]}
 ];
 
