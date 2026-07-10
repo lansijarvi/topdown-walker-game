@@ -569,7 +569,7 @@ function stopEngine() {
 }
 
 const WORLD_W = 4600;
-const WORLD_H = 3200;
+const WORLD_H = 4500;
 const ROOM_W = 500;
 const ROOM_H = 380;
 const WALL_THICK = 24;
@@ -887,6 +887,56 @@ const furnitureStoreTree = {
   }
 };
 
+// second-hand shop: bigger, bulkier stuff for the house - same buy-once,
+// fixed-spot pattern as FURNITURE_ITEMS/furnitureStoreTree above
+const THRIFT_ITEMS = [
+  { key: 'bed', name: 'Bed', price: 200 },
+  { key: 'barstools', name: 'Bar Stools', price: 60 }
+];
+
+const thriftStoreTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => THRIFT_ITEMS.every(f => p.homeFurniture.includes(f.key))
+      ? "You've cleaned me out! Nothing left here for you."
+      : "Rummage through the good stuff - furnish the whole house from here.",
+    options: (p) => {
+      const opts = THRIFT_ITEMS
+        .filter(f => !p.homeFurniture.includes(f.key))
+        .map(f => ({ label: `${f.name} - $${f.price}`, next: 'checkFunds', item: f.key }));
+      opts.push({ label: opts.length ? 'Just looking' : 'Thanks', next: 'bye' });
+      return opts;
+    }
+  },
+  checkFunds: {
+    speaker: 'npc',
+    text: (p) => {
+      const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
+      return p.money >= item.price ? `That'll be $${item.price} for the ${item.name}.` : `That's $${item.price}. You're short on cash.`;
+    },
+    next: (p) => {
+      const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
+      return p.money >= item.price ? 'purchase' : 'tooExpensive';
+    }
+  },
+  purchase: {
+    speaker: 'npc',
+    text: (p) => `Sold! One ${THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem).name} for the house.`,
+    end: true,
+    effect: (p) => {
+      const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
+      p.money -= item.price;
+      p.homeFurniture.push(item.key);
+    }
+  },
+  tooExpensive: {
+    speaker: 'npc', text: "Come back when you've got the cash.", end: true
+  },
+  bye: {
+    speaker: 'npc', text: "Come back anytime.", end: true
+  }
+};
+
 // Courthouse clerk - pay off any outstanding tickets and fines here
 const courtTree = {
   start: {
@@ -1024,26 +1074,39 @@ const blackjackTree = {
   bye: { speaker: 'npc', text: "Suit yourself. Table's open if you change your mind.", end: true }
 };
 
+const ROAD_W = 140;
+
+// the river separating downtown from the seedy south-side neighborhood -
+// every named street runs the full height of the map (so the south side
+// forms a real grid with 5th/6th St, same as downtown), and every one of
+// them has its own metal bridge crossing the water
+const RIVER_Y = 2900;
+const RIVER_H = 480;
+
 const NUMBERED_STREETS = [
   { name: '1st St', y: 400 },
   { name: '2nd St', y: 940 },
   { name: '3rd St', y: 1980 },
-  { name: '4th St', y: 2580 }
+  { name: '4th St', y: 2580 },
+  { name: '5th St', y: 3600 },
+  { name: '6th St', y: 4060 }
 ];
 const NAMED_STREETS = [
-  { name: 'Oak St',   x: 400 },
-  { name: 'Pine St',  x: 940 },
-  { name: 'Elm St',   x: 1980 },
-  { name: 'Maple St', x: 2520 },
-  { name: 'Cedar St', x: 3900 }
+  { name: 'Oak St',   x: 400,  bridge: true },
+  { name: 'Pine St',  x: 940,  bridge: true },
+  { name: 'Elm St',   x: 1980, bridge: true },
+  { name: 'Maple St', x: 2520, bridge: true },
+  { name: 'Cedar St', x: 3900, bridge: true }
 ];
-const ROAD_W = 140;
+
 const SIDEWALK_W = 20;
 
 const H_LANES = [];
 NUMBERED_STREETS.forEach(s => { H_LANES.push(s.y - 10); H_LANES.push(s.y + ROAD_W + 10); });
 const V_LANES = [];
 NAMED_STREETS.forEach(s => { V_LANES.push(s.x - 10); V_LANES.push(s.x + ROAD_W + 10); });
+const BRIDGE_LANES = [];
+NAMED_STREETS.filter(s => s.bridge).forEach(s => { BRIDGE_LANES.push(s.x - 10); BRIDGE_LANES.push(s.x + ROAD_W + 10); });
 
 function nearestLane(value, lanes) {
   return lanes.reduce((best, l) => Math.abs(l - value) < Math.abs(best - value) ? l : best, lanes[0]);
@@ -1051,7 +1114,12 @@ function nearestLane(value, lanes) {
 
 function buildSidewalkPath(sx, sy, ex, ey) {
   if (Math.abs(sy - ey) < 2) return [{ x: ex, y: ey }];
-  const crossX = nearestLane((sx + ex) / 2, V_LANES);
+  // crossing the river means only Pine/Maple's lanes are actually walkable
+  // (they're the only streets with a bridge) - otherwise this would happily
+  // route a citizen straight across the water on any other street
+  const crossesRiver = (sy < RIVER_Y) !== (ey < RIVER_Y);
+  const lanes = crossesRiver ? BRIDGE_LANES : V_LANES;
+  const crossX = nearestLane((sx + ex) / 2, lanes);
   return [
     { x: crossX, y: sy },
     { x: crossX, y: ey },
@@ -1087,11 +1155,31 @@ function tableSet(...spots) {
   };
 }
 
+// a lie-down bed - the interact spot sits just past the foot of the bed so
+// the player can reach it without needing to be inside its (blocking)
+// footprint, same trick tableAt() uses for chairs
+function bedAt(cx, cy, w, h, facing) {
+  return {
+    rect: { x: cx - w / 2, y: cy - h / 2, w, h },
+    // "spot" is the walkable approach point just past the foot of the bed
+    // (used to detect you're close enough); lieX/lieY is the bed's own
+    // center, where the player actually gets teleported to lie down so
+    // they end up drawn on the bed instead of on the floor next to it
+    spot: { x: cx, y: cy + h / 2 + 14, facing: facing || 'up', lieX: cx, lieY: cy }
+  };
+}
+function bedSet(...spots) {
+  return {
+    bedRects: spots.map(s => s.rect),
+    beds: spots.map(s => s.spot)
+  };
+}
+
 const buildings = [
   {x: 20, y: 220, w: 180, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tattoo Parlor', floor: '#3a2a2a', npcs: [{name:'Inkwell Ivy', color:'#c25fae', dialogue: ivyTree}]},
   {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [{name:'Barber Bob', color:'#8f8f5f'}, {name:'Barber Betty', color:'#c2905f'}]},
   {x: 570, y: 170, w: 160, h: 110, wallH: 100,roof: '#4a6a8a', wall: '#37506a', name: 'Pharmacy', floor: '#2f3a44', npcs: [{name:'Pharmacist Pat', color:'#8fc25f'}]},
-  {x: 2940, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f'}]},
+  {x: 2940, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f', dialogue: thriftStoreTree}]},
   {x: 3180, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
   {x: 1170, y: 190, w: 220, h: 100, wallH: 90, roof: '#8a7a58', wall: '#6a5c40', name: 'Grocery Store', floor: '#4a4433', npcs: [{name:'Stan the Stock Boy', color:'#5fa8c2'}, {name:'Cart Kid Cassie', color:'#c2a05f'}]},
   {x: 1660, y: 180, w: 240, h: 110,wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Restaurant', floor: '#3a2f22', npcs: [{name:'Waiter Waldo', color:'#c2c25f'}, {name:'Chef Chuck', color:'#c25f5f'}],
@@ -1120,7 +1208,8 @@ const buildings = [
     {name:'Dealer Deuce', color:'#3a3a3a', dialogue: blackjackTree}
   ]},
   {x: 1650, y: 720, w: 260, h: 110, wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Home', floor: '#4a3f33', npcs: []},
-  {x: 2220, y: 700, w: 240, h: 120, wallH: 100, roof: '#c25f5f', wall: '#8f3f3f', name: 'Hospital', floor: '#e8e8e8', npcs: [{name:'Nurse Nancy', color:'#5f8fc2'}, {name:'Dr. Dan', color:'#eaeaea'}]},
+  {x: 2220, y: 700, w: 240, h: 120, wallH: 100, roof: '#c25f5f', wall: '#8f3f3f', name: 'Hospital', floor: '#e8e8e8', npcs: [{name:'Nurse Nancy', color:'#5f8fc2'}, {name:'Dr. Dan', color:'#eaeaea'}],
+    ...bedSet(bedAt(110, 110, 70, 90, 'up'), bedAt(390, 110, 70, 90, 'up'))},
 
   {x: 90, y: 1780, w: 220, h: 100, wallH: 80, roof: '#4a8a5a', wall: '#376a44', name: 'Used Motorcycles', floor: '#3a3025', npcs: [{name:'Slick Sal', color:'#c2905f', dialogue: motoStoreTree}], displayBikes: [
     { x: 430, y: 80,  facing: 'left', color: '#8f2e2e' }, // red
@@ -1163,7 +1252,28 @@ const buildings = [
   {x: 1300, y: 2410, w: 220, h: 95,  wallH: 55, roof: '#5f9ac2', wall: '#3a708f', name: 'Toy Store', floor: '#e0e8f0', npcs: [{name:'Clerk Chip', color:'#5f9ac2'}]},
   {x: 2680, y: 2400, w: 240, h: 100, wallH: 60, roof: '#c25f5f', wall: '#8f3a3a', name: 'Pizza Place', floor: '#e0d8c8', npcs: [{name:'Tony the Cook', color:'#c25f5f', gender:'m'}],
     ...tableSet(tableAt(120, 165), tableAt(380, 165))},
-  {x: 4070, y: 2420, w: 200, h: 90,  wallH: 50, roof: '#5fc27a', wall: '#3a8f4a', name: 'Vet Clinic', floor: '#e8e8e8', npcs: [{name:'Doc Daisy', color:'#5fc27a'}]}
+  {x: 4070, y: 2420, w: 200, h: 90,  wallH: 50, roof: '#5fc27a', wall: '#3a8f4a', name: 'Vet Clinic', floor: '#e8e8e8', npcs: [{name:'Doc Daisy', color:'#5fc27a'}]},
+
+  // --- south side, across the river - a proper two-street grid (5th St
+  // and 6th St, crossing the same Oak/Pine/Elm/Maple/Cedar line as
+  // downtown) for a grayer, grimier neighborhood, only reachable over the
+  // Pine St or Maple St bridge ---
+  // row 1, fronting 5th St
+  {x: 60,   y: 3410, w: 180, h: 90,  wallH: 60, roof: '#6a6a5a', wall: '#4a4a40', name: 'Corner Store', floor: '#3a3a32', seedy: true, npcs: [{name:'Clerk Duane', color:'#3a3a32', dirty: true}]},
+  {x: 620,  y: 3410, w: 150, h: 90,  wallH: 70, roof: '#5a5248', wall: '#3a3630', name: 'Rundown House', floor: '#332f28', seedy: true, npcs: [{name:'Old Man Riggs', color:'#332f28', dirty: true}]},
+  {x: 1150, y: 3410, w: 170, h: 90,  wallH: 65, roof: '#4a453f', wall: '#2f2b26', name: 'Drug Den', floor: '#242220', seedy: true, npcs: [{name:'Twitchy Tomas', color:'#2a2722', dirty: true}, {name:'Lookout Lou', color:'#211f1a', dirty: true}]},
+  {x: 1600, y: 3410, w: 200, h: 100, wallH: 70, roof: '#6a5a4a', wall: '#4a3f32', name: 'Sundown Motel', floor: '#302a22', seedy: true, npcs: [{name:'Night Clerk Nadia', color:'#3a3228', dirty: true}]},
+  // row 2, fronting 6th St
+  {x: 2200, y: 3830, w: 170, h: 90,  wallH: 65, roof: '#6a4a58', wall: '#463038', name: 'Massage Parlor', floor: '#2e2228', seedy: true, npcs: [{name:'Madame Yu', color:'#3a2830', dirty: true}]},
+  {x: 2750, y: 3830, w: 220, h: 100, wallH: 80, roof: '#5a4a3a', wall: '#3a2f24', name: 'Skid Row Bar', floor: '#28221a', seedy: true, npcs: [{name:'Bartender Zeke', color:'#332a20', dirty: true}, {name:'Regular Roy', color:'#282219', dirty: true}],
+    bar: { x: 110, y: 50, w: 280, h: 40, orientation: 'horizontal' },
+    ...tableSet(tableAt(100, 165), tableAt(400, 165))},
+  {x: 3100, y: 3830, w: 220, h: 100, wallH: 90, roof: '#4a4a42', wall: '#302f2a', name: 'Rustwater Apartments', floor: '#282722', seedy: true, npcs: [{name:'Tenant Rico', color:'#282824', dirty: true}]},
+  {x: 3450, y: 3830, w: 200, h: 100, wallH: 70, roof: '#5a3a4a', wall: '#3a2530', name: 'Peepshow Palace', floor: '#241a20', seedy: true, npcs: [
+    {name:'Bouncer Duke', color:'#1a1a1a', gender: 'm', hairstyle: 'bald', big: true, dirty: true},
+    {name:'Dancer Ruby', color:'#c25f5f', bikini: true, bikiniColor: '#c25f5f'},
+    {name:'Bartender Moe', color:'#332a20', dirty: true}
+  ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }}
 ];
 
 buildings.forEach(b => b.npcs.forEach(n => {
@@ -1196,6 +1306,14 @@ const parkObstacles = [
   ...PARK_TREES.map(t => ({ x: PARK.x + t.x - 6, y: PARK.y + t.y - 6, w: 12, h: 12 }))
 ];
 
+// the river itself, as a wall of water spanning the whole map except for
+// gaps at the two bridges - blocks foot and vehicle movement alike, same
+// as the pond does in the park
+const riverObstacles = freeSegments(
+  WORLD_W,
+  NAMED_STREETS.filter(s => s.bridge).map(s => ({ start: s.x - SIDEWALK_W - 6, end: s.x + ROAD_W + SIDEWALK_W + 6 }))
+).map(seg => ({ x: seg.start, y: RIVER_Y, w: seg.end - seg.start, h: RIVER_H }));
+
 const citizens = [
   { name: 'Jogger Jamie',      homeX: 200,  homeY: 390, x: 200,  y: 390, color: '#c2905f' },
   { name: 'Commuter Cody',     homeX: 640,  homeY: 390, x: 640,  y: 390, color: '#5f8fc2' },
@@ -1213,6 +1331,15 @@ const citizens = [
   { name: 'Test Driver Toni',  homeX: 2250, homeY: 1970, x: 2250, y: 1970, color: '#8f8f5f' },
   { name: 'Cart Pusher Cam',   homeX: 2860, homeY: 1970, x: 2860, y: 1970, color: '#5fc290' },
   { name: 'Beat Cop Barnes',   homeX: 3080, homeY: 890,  x: 3080, y: 890,  color: '#2a3a6a' },
+  { name: 'Officer Reyes',     homeX: 400,  homeY: 930,  x: 400,  y: 930,  color: '#2a3a6a' },
+
+  // south side, across the river - a grubbier crowd to match the neighborhood
+  { name: 'Junkie Jess',       homeX: 400,  homeY: 3590, x: 400,  y: 3590, color: '#4a453f', dirty: true },
+  { name: 'Hustler Hank',      homeX: 1200, homeY: 3750, x: 1200, y: 3750, color: '#3a362f', dirty: true },
+  { name: 'Scavenger Sam',     homeX: 2000, homeY: 3590, x: 2000, y: 3590, color: '#332f28', dirty: true },
+  { name: 'Wanderer Wade',     homeX: 2800, homeY: 4050, x: 2800, y: 4050, color: '#2a2722', dirty: true },
+  { name: 'Pawnshop Pauly',    homeX: 3600, homeY: 4210, x: 3600, y: 4210, color: '#3a3228', dirty: true },
+  { name: 'Shady Sheila',      homeX: 4200, homeY: 3750, x: 4200, y: 3750, color: '#3a2830', dirty: true },
 ].map(c => ({
   ...c,
   ...randomPersonStyle(),
@@ -1308,7 +1435,7 @@ const player = {
   hairstyle: 'square',
   skinTone: '#f0c090',
   traits: {},
-  money: 1000,
+  money: 10000,
   finesOwed: 0,
   hasGun: false,
   gunEquipped: false,
@@ -1318,6 +1445,9 @@ const player = {
   onMotorcycle: false,
   wheelieUntil: 0,
   sitting: false,
+  lying: false,
+  showering: false,
+  restSpot: null,
   homeFurniture: [],
   motoColor: '#8f2e2e',
   pendingMotoColor: '#8f2e2e',
@@ -1383,6 +1513,16 @@ let wasBoostingOnBike = false;
 let currentBuilding = null;
 let nearbyNPC = null;
 let nearbySeat = null;
+let nearbyBed = null;
+let nearbyShower = null;
+let nearbyFixture = null;
+let interactCooldownUntil = 0;
+let flavorMessage = '';
+let flavorMessageUntil = 0;
+function showFlavorMessage(text) {
+  flavorMessage = text;
+  flavorMessageUntil = performance.now() + 2000;
+}
 let dialogueOpen = false;
 let awaitingName = false;
 let dialogueTree = null;
@@ -1458,6 +1598,24 @@ function tryWheelie() {
   player.wheelieUntil = performance.now() + WHEELIE_DURATION;
 }
 
+// standing/getting up/stepping out needs to put the player back at the
+// walkable point outside the furniture, not leave them wherever they were
+// sitting/lying/standing (which for beds/showers is inside the object's
+// own solid collision rect - without this they'd be stuck, unable to move
+// since every step would still overlap that obstacle)
+function returnToRestSpot() {
+  if (!player.restSpot) return;
+  player.x = player.restSpot.x - player.w / 2;
+  player.y = player.restSpot.y - player.h / 2;
+  player.facing = player.restSpot.facing;
+  player.restSpot = null;
+  // standing up lands you exactly on the spot that triggers "nearby" in
+  // the first place - without a brief cooldown, the very next E press (or
+  // just still standing there next frame) immediately sits/lies you back
+  // down, which reads as being stuck
+  interactCooldownUntil = performance.now() + 400;
+}
+
 function pressInteract() {
   if (dialogueOpen) {
     const node = dialogueTree[dialogueNodeKey];
@@ -1469,6 +1627,13 @@ function pressInteract() {
     }
   } else if (player.sitting) {
     player.sitting = false;
+    returnToRestSpot();
+  } else if (player.lying) {
+    player.lying = false;
+    returnToRestSpot();
+  } else if (player.showering) {
+    player.showering = false;
+    returnToRestSpot();
   } else if (nearbyNPC) {
     dialogueTree = nearbyNPC.dialogue || helloTree;
     const startKey = nearbyNPC.getStartKey ? nearbyNPC.getStartKey(player) : 'start';
@@ -1476,9 +1641,28 @@ function pressInteract() {
     enterNode(startKey);
   } else if (nearbySeat) {
     player.sitting = true;
-    player.x = nearbySeat.x - player.w / 2;
-    player.y = nearbySeat.y - player.h / 2;
+    player.restSpot = { x: nearbySeat.x, y: nearbySeat.y, facing: nearbySeat.facing };
+    // sitX/sitY (when present, e.g. a bed) put the player right on the
+    // object itself instead of at the walkable approach point beside it
+    player.x = (nearbySeat.sitX ?? nearbySeat.x) - player.w / 2;
+    player.y = (nearbySeat.sitY ?? nearbySeat.y) - player.h / 2;
     player.facing = nearbySeat.facing;
+    if (nearbySeat.flavor) showFlavorMessage(nearbySeat.flavor);
+  } else if (nearbyBed) {
+    player.lying = true;
+    player.restSpot = { x: nearbyBed.x, y: nearbyBed.y, facing: nearbyBed.facing };
+    player.x = nearbyBed.lieX - player.w / 2;
+    player.y = nearbyBed.lieY - player.h / 2;
+    player.facing = nearbyBed.facing;
+  } else if (nearbyShower) {
+    player.showering = true;
+    player.restSpot = { x: nearbyShower.x, y: nearbyShower.y, facing: nearbyShower.facing };
+    player.x = nearbyShower.standX - player.w / 2;
+    player.y = nearbyShower.standY - player.h / 2;
+    player.facing = nearbyShower.facing;
+    showFlavorMessage('You hop in the shower. Nice and warm!');
+  } else if (nearbyFixture) {
+    showFlavorMessage(nearbyFixture.message);
   }
   syncDialogueOptionsOverlay();
 }
@@ -1535,16 +1719,20 @@ window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
 window.addEventListener('keydown', e => {
   if (awaitingName) return;
-  if (e.key.toLowerCase() === 'g') toggleGunEquip();
+  // toggle-style actions only fire on the actual keypress, not the
+  // OS/browser's auto-repeat while the key stays held - otherwise holding
+  // one a beat too long rapidly re-triggers it (e.g. mount/dismount the
+  // bike several times before you let go)
+  if (e.key.toLowerCase() === 'g' && !e.repeat) toggleGunEquip();
   if (e.key === ' ') {
     e.preventDefault();
     shoot();
   }
   if (e.key.toLowerCase() === 'r') reload();
-  if (e.key.toLowerCase() === 'm') toggleMotorcycle();
-  if (e.key.toLowerCase() === 'c') toggleCar();
-  if (e.key.toLowerCase() === 'n') toggleMap();
-  if (e.key.toLowerCase() === 'x') tryWheelie();
+  if (e.key.toLowerCase() === 'm' && !e.repeat) toggleMotorcycle();
+  if (e.key.toLowerCase() === 'c' && !e.repeat) toggleCar();
+  if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
+  if (e.key.toLowerCase() === 'x' && !e.repeat) tryWheelie();
 });
 
 window.addEventListener('keydown', e => {
@@ -1552,7 +1740,10 @@ window.addEventListener('keydown', e => {
   const key = e.key.toLowerCase();
 
   if (key === 'e') {
-    pressInteract();
+    // same auto-repeat guard as the toggles above - this is exactly what
+    // was causing "stuck in bed": holding E a moment too long fired
+    // lie-down/get-up/lie-down again before the key was released
+    if (!e.repeat) pressInteract();
     return;
   }
 
@@ -1616,7 +1807,13 @@ function enterBuilding(b) {
   player.onMotorcycle = false; // park it outside - nobody's riding through a doorway
   player.onCar = false;
   player.sitting = false;
+  player.lying = false;
+  player.showering = false;
+  player.restSpot = null;
   nearbySeat = null;
+  nearbyBed = null;
+  nearbyShower = null;
+  nearbyFixture = null;
   stopEngine();
   stopAmbientHum();
   playDoorChime();
@@ -1629,9 +1826,15 @@ function exitBuilding() {
   player.y = b.doorZone.y + b.doorZone.h + 12;
   player.facing = 'down';
   player.sitting = false;
+  player.lying = false;
+  player.showering = false;
+  player.restSpot = null;
   scene = 'outside';
   currentBuilding = null;
   nearbyNPC = null;
+  nearbyBed = null;
+  nearbyShower = null;
+  nearbyFixture = null;
   dialogueOpen = false;
   dialogueTree = null;
   dialogueNodeKey = 'start';
@@ -1659,7 +1862,7 @@ function tryMoveOutside(dx, dy) {
   let blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
   if (!blocked) player.x = next.x;
 
@@ -1668,18 +1871,83 @@ function tryMoveOutside(dx, dy) {
   blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o));
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
   if (!blocked) player.y = next.y;
 }
 
 // fixed spots for the furniture the player can buy at the Furniture Store -
 // no placement UI, a piece just appears here once it's owned
+// couch/bookshelf/rug/bed/barstools are still bought (bed + barstools from
+// the Thrift Store) and only exist in Home once owned; bathroom/kitchen/
+// laundry below are built into every residential building unconditionally
 const HOME_FURNITURE_LAYOUT = {
-  couch:     { x: 180, y: 40,  w: 140, h: 40 },
-  bookshelf: { x: 40,  y: 60,  w: 24,  h: 110 },
-  rug:       { x: 160, y: 160, w: 200, h: 130 }
+  bookshelf: { x: 24,  y: 100, w: 24,  h: 110 },
+  couch:     { x: 70,  y: 100, w: 140, h: 40 },
+  rug:       { x: 60,  y: 160, w: 200, h: 90 },
+  bed:       { x: 250, y: 190, w: 70,  h: 90 },
+  barstools: [
+    { x: 100, y: 220, facing: 'down' },
+    { x: 130, y: 220, facing: 'down' }
+  ]
 };
+
+// every home, apartment, and motel room has its own working bathroom - a
+// real walled-off nook in the top-right corner, flush against the room's
+// own north/east walls so only two new wall segments (with a doorway gap)
+// are needed to close it off
+const BATHROOM_NOOK = { x: 306, y: 24, w: 170, h: 160 };
+const BATHROOM_WALL_T = 8;
+// doorway sits toward the right side of the bottom wall rather than
+// centered, echoing a real bathroom floor plan (door bottom-right)
+const BATHROOM_DOOR_X = 396;
+const BATHROOM_DOOR_W = 60;
+// laid out like a real bathroom floor plan: shower top-left (corner,
+// against the top wall and the nook's own left divider), sink top-right
+// (against the top and the room's outer right wall), toilet bottom-left
+// against the left divider with its open side facing right into the room
+const BATHROOM_FIXTURES = {
+  shower: { x: 314, y: 24,  w: 70, h: 70 },
+  sink:   { x: 414, y: 24,  w: 62, h: 40 },
+  toilet: { x: 314, y: 118, w: 44, h: 36 }
+};
+
+// kitchen - a run of appliances along the top wall, left of the bathroom
+// (matching a classic galley layout), side by side so each appliance's
+// clearance (which faces down, away from the wall) never lands inside a
+// neighbor - stacking them vertically instead (clearance parallel to the
+// stacking axis) is exactly what caused the sink/toilet and stove/fridge
+// overlap bugs
+const KITCHEN_FIXTURES = {
+  fridge:      { x: 24,  y: 24, w: 60, h: 60 },
+  stove:       { x: 104, y: 24, w: 64, h: 48 },
+  kitchenSink: { x: 188, y: 24, w: 54, h: 34 }
+};
+
+// laundry - flush against the bottom wall, bottom-right corner (mirrors the
+// kitchen's layout logic)
+const LAUNDRY_FIXTURES = {
+  washer: { x: 336, y: 304, w: 64, h: 52 },
+  dryer:  { x: 410, y: 304, w: 64, h: 52 }
+};
+
+function getBathroomWallObstacles() {
+  const n = BATHROOM_NOOK;
+  const bottomY = n.y + n.h - BATHROOM_WALL_T;
+  const doorStart = BATHROOM_DOOR_X, doorEnd = BATHROOM_DOOR_X + BATHROOM_DOOR_W;
+  return [
+    { x: n.x, y: n.y, w: BATHROOM_WALL_T, h: n.h }, // left divider off the main room
+    { x: n.x, y: bottomY, w: doorStart - n.x, h: BATHROOM_WALL_T }, // bottom wall, left of doorway
+    { x: doorEnd, y: bottomY, w: (n.x + n.w) - doorEnd, h: BATHROOM_WALL_T } // bottom wall, right of doorway
+  ];
+}
+
+// every home, apartment, and motel room comes fully fitted out already -
+// bathroom, kitchen, and laundry are all built in, not something you shop for
+const RESIDENTIAL_BUILDINGS = ['Home', 'House', 'Apartments', 'Riverside Apartments', 'Sunset Apartments', 'Motel', 'Rundown House', 'Rustwater Apartments', 'Sundown Motel'];
+function hasBathroom(b) { return RESIDENTIAL_BUILDINGS.includes(b.name); }
+function hasKitchen(b) { return RESIDENTIAL_BUILDINGS.includes(b.name); }
+function hasLaundry(b) { return RESIDENTIAL_BUILDINGS.includes(b.name); }
 
 function getHomeCouchSeats() {
   const c = HOME_FURNITURE_LAYOUT.couch;
@@ -1689,19 +1957,91 @@ function getHomeCouchSeats() {
   ];
 }
 
-// static tables/seats (taverns, restaurants, etc) plus Home's furniture,
-// which only exists once the player has actually bought each piece
+function getHomeBedSpot() {
+  const b = HOME_FURNITURE_LAYOUT.bed;
+  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
+  return { x: cx, y: cy + b.h / 2 + 14, facing: 'up', lieX: cx, lieY: cy };
+}
+
+// static tables/seats (taverns, restaurants, etc), the toilet (any building
+// with a bathroom), plus Home's furniture, which only exists once bought
 function getBuildingSeats(b) {
   const seats = (b.seats || []).slice();
-  if (b.name === 'Home' && player.homeFurniture.includes('couch')) seats.push(...getHomeCouchSeats());
+  if (hasBathroom(b)) {
+    // the toilet's back is against the left wall, open side facing right.
+    // approach from the outside (walkable, and where standing back up
+    // returns to) but sit anchored on the bowl itself, not 14px away from
+    // it - otherwise it just looks like standing next to the toilet
+    const t = BATHROOM_FIXTURES.toilet;
+    seats.push({ ...spotRight(t), sitX: t.x + t.w * 0.68, sitY: t.y + t.h / 2, facing: 'right', flavor: 'Ahh, sweet relief.' });
+  }
+  if (b.name === 'Home') {
+    if (player.homeFurniture.includes('couch')) seats.push(...getHomeCouchSeats());
+    if (player.homeFurniture.includes('barstools')) seats.push(...HOME_FURNITURE_LAYOUT.barstools);
+  }
   return seats;
+}
+
+// static per-building beds (Hospital) plus Home's bed, once bought
+function getBuildingBeds(b) {
+  const beds = (b.beds || []).slice();
+  if (b.name === 'Home' && player.homeFurniture.includes('bed')) beds.push(getHomeBedSpot());
+  return beds;
+}
+
+// the shower is its own little "stand under the water" state rather than
+// an instant flavor message - any building with a bathroom has one
+function getBuildingShowers(b) {
+  if (!hasBathroom(b)) return [];
+  const s = BATHROOM_FIXTURES.shower;
+  // stand near the front/floor of the stall rather than dead-center - the
+  // player is drawn feet-first from this point upward, so this is what
+  // puts their head (not their knees) under the falling water
+  const standX = s.x + s.w / 2, standY = s.y + s.h - 6;
+  return [{ x: standX, y: s.y + s.h + 14, facing: 'up', standX, standY }];
+}
+
+// sink/stove/fridge/kitchen sink - flavor-only interactions, no sitting or
+// lying, just a quick message when used
+// wall-mounted appliances face away from whichever wall their back is
+// against - "below"/"above" the object is wherever open floor actually is
+const spotBelow = (r) => ({ x: r.x + r.w / 2, y: r.y + r.h + 14 });
+const spotAbove = (r) => ({ x: r.x + r.w / 2, y: r.y - 14 });
+const spotRight = (r) => ({ x: r.x + r.w + 14, y: r.y + r.h / 2 });
+
+function getBuildingFixtures(b) {
+  const fixtures = [];
+  if (hasBathroom(b)) {
+    fixtures.push({ ...spotBelow(BATHROOM_FIXTURES.sink), hint: '[E] to wash up', message: 'You wash up. Squeaky clean!' });
+  }
+  if (hasKitchen(b)) {
+    fixtures.push({ ...spotBelow(KITCHEN_FIXTURES.stove), hint: '[E] to cook', message: 'You cook up a quick meal.' });
+    fixtures.push({ ...spotBelow(KITCHEN_FIXTURES.fridge), hint: '[E] to grab a snack', message: 'You grab a snack from the fridge.' });
+    fixtures.push({ ...spotBelow(KITCHEN_FIXTURES.kitchenSink), hint: '[E] to wash dishes', message: 'You wash the dishes. All clean!' });
+  }
+  if (hasLaundry(b)) {
+    fixtures.push({ ...spotAbove(LAUNDRY_FIXTURES.washer), hint: '[E] to start a load', message: 'You toss in a load of laundry.' });
+    fixtures.push({ ...spotAbove(LAUNDRY_FIXTURES.dryer), hint: '[E] to grab your laundry', message: 'You grab your clean, warm clothes.' });
+  }
+  return fixtures;
 }
 
 function getBuildingFurnitureObstacles(b) {
   const obstacles = (b.tables || []).slice();
+  obstacles.push(...(b.bedRects || []));
+  if (hasBathroom(b)) {
+    obstacles.push(BATHROOM_FIXTURES.sink, BATHROOM_FIXTURES.toilet, BATHROOM_FIXTURES.shower, ...getBathroomWallObstacles());
+  }
+  if (hasKitchen(b)) {
+    obstacles.push(KITCHEN_FIXTURES.fridge, KITCHEN_FIXTURES.stove, KITCHEN_FIXTURES.kitchenSink);
+  }
+  if (hasLaundry(b)) {
+    obstacles.push(LAUNDRY_FIXTURES.washer, LAUNDRY_FIXTURES.dryer);
+  }
   if (b.name === 'Home') {
     if (player.homeFurniture.includes('couch')) obstacles.push(HOME_FURNITURE_LAYOUT.couch);
     if (player.homeFurniture.includes('bookshelf')) obstacles.push(HOME_FURNITURE_LAYOUT.bookshelf);
+    if (player.homeFurniture.includes('bed')) obstacles.push(HOME_FURNITURE_LAYOUT.bed);
     // the rug is just floor decoration - no collision
   }
   return obstacles;
@@ -1875,7 +2215,7 @@ function update(timestamp, dt) {
 
   if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
 
-  player.moving = !player.sitting && (dx !== 0 || dy !== 0);
+  player.moving = !player.sitting && !player.lying && !player.showering && (dx !== 0 || dy !== 0);
   if (player.moving) {
     if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
     else player.facing = dy > 0 ? 'down' : 'up';
@@ -2043,24 +2383,11 @@ function update(timestamp, dt) {
     // background traffic - bouncing back and forth along their street, and
     // easing over into the correct right-hand lane for whichever direction
     // they're currently heading (so a U-turn also means a lane change).
-    // Cars hold at a red or yellow light rather than driving straight through.
+    // Cars (and bikes) hold at a red or yellow light rather than driving
+    // straight through.
     trafficCars.forEach(car => {
       const stopped = carShouldStopAtLight(car, timestamp) || carAhead(car);
-      if (car.axis === 'h') {
-        if (!stopped) {
-          car.x += car.dir * car.speed * dt;
-          if (car.x > car.maxX) { car.x = car.maxX; car.dir = -1; }
-          if (car.x < car.minX) { car.x = car.minX; car.dir = 1; }
-        }
-        car.y += (trafficLane(car) - car.y) * 0.06 * dt;
-      } else {
-        if (!stopped) {
-          car.y += car.dir * car.speed * dt;
-          if (car.y > car.maxY) { car.y = car.maxY; car.dir = -1; }
-          if (car.y < car.minY) { car.y = car.minY; car.dir = 1; }
-        }
-        car.x += (trafficLane(car) - car.x) * 0.06 * dt;
-      }
+      moveVehicleAlongLane(car, dt, stopped);
 
       // a car passing close by plays once, then cools down for a bit so it
       // doesn't spam the same whoosh every frame while idling nearby at a light
@@ -2069,6 +2396,11 @@ function update(timestamp, dt) {
         if (Math.random() < 0.2) playHonk();
         car.soundCooldown = timestamp + 4000;
       }
+    });
+
+    trafficBikes.forEach(bike => {
+      const stopped = carShouldStopAtLight(bike, timestamp) || carAhead(bike);
+      moveVehicleAlongLane(bike, dt, stopped);
     });
 
     // collisions with traffic: pedestrians (and the player, unless safely
@@ -2120,11 +2452,11 @@ function update(timestamp, dt) {
       infoEl.textContent = `You got hit by a car! -$${HIT_COST} hospital bill, and a $${JAYWALK_FINE} jaywalking ticket to pay at the Courthouse. Walk down to the door to leave.`;
     }
   } else if (scene === 'interior') {
-    if (!player.sitting) tryMoveInterior(dx * moveSpeed * dt, dy * moveSpeed * dt);
+    if (!player.sitting && !player.lying && !player.showering) tryMoveInterior(dx * moveSpeed * dt, dy * moveSpeed * dt);
 
     const exitZone = { x: ROOM_W/2 - 30, y: ROOM_H - WALL_THICK - 14, w: 60, h: 20 };
     const playerRect = { x: player.x, y: player.y, w: player.w, h: player.h };
-    if (!player.sitting && player.facing === 'down' && rectsOverlap(playerRect, exitZone)) {
+    if (!player.sitting && !player.lying && !player.showering && player.facing === 'down' && rectsOverlap(playerRect, exitZone)) {
       exitBuilding();
       return;
     }
@@ -2133,9 +2465,23 @@ function update(timestamp, dt) {
     const py = player.y + player.h / 2;
 
     nearbySeat = null;
-    if (!player.sitting) {
+    nearbyBed = null;
+    nearbyShower = null;
+    nearbyFixture = null;
+    if (!player.sitting && !player.lying && !player.showering && timestamp > interactCooldownUntil) {
       getBuildingSeats(currentBuilding).forEach(s => {
         if (Math.hypot(s.x - px, s.y - py) < 26) nearbySeat = s;
+      });
+      getBuildingBeds(currentBuilding).forEach(bd => {
+        if (Math.hypot(bd.x - px, bd.y - py) < 26) nearbyBed = bd;
+      });
+      getBuildingShowers(currentBuilding).forEach(s => {
+        if (Math.hypot(s.x - px, s.y - py) < 26) nearbyShower = s;
+      });
+    }
+    if (!player.sitting && !player.lying && !player.showering) {
+      getBuildingFixtures(currentBuilding).forEach(f => {
+        if (Math.hypot(f.x - px, f.y - py) < 26) nearbyFixture = f;
       });
     }
 
@@ -2236,7 +2582,7 @@ function drawDude(cx, cy, color, label, opts) {
   ctx.save();
   ctx.translate(cx, cy);
 
-  if (opts.knockedDown) {
+  if (opts.knockedDown || opts.lying) {
     ctx.rotate(Math.PI / 2);
     ctx.translate(0, 6);
   }
@@ -2251,7 +2597,7 @@ function drawDude(cx, cy, color, label, opts) {
   // Idle phase is offset by screen position (stable while stationary) so a
   // crowd of standing NPCs doesn't all sway in lockstep.
   let legSwing = 0;
-  if (!opts.riding && !opts.knockedDown) {
+  if (!opts.riding && !opts.knockedDown && !opts.lying && !opts.sitting) {
     const t = performance.now() / 1000;
     let bodyBob;
     if (opts.moving) {
@@ -2284,7 +2630,16 @@ function drawDude(cx, cy, color, label, opts) {
     ctx.fill();
   }
 
-  if (!opts.riding) {
+  if (opts.sitting) {
+    // knees bent, legs tucked toward whichever way they're facing instead
+    // of hanging straight down like a standing pose - same tucked-forward
+    // trick frontRiding uses, just shorter and nudged in the facing direction
+    const legDX = facing === 'right' ? 4 : facing === 'left' ? -4 : 0;
+    const legDY = facing === 'down' ? 3 : facing === 'up' ? -3 : 0;
+    ctx.fillStyle = '#2a2a2a';
+    ctx.fillRect(-7 + legDX, -10 + legDY, 5, 9);
+    ctx.fillRect(2 + legDX, -10 + legDY, 5, 9);
+  } else if (!opts.riding) {
     ctx.fillStyle = '#2a2a2a';
     ctx.fillRect(-7, -12 + legSwing, 5, 13);
     ctx.fillRect(2, -12 - legSwing, 5, 13);
@@ -2494,6 +2849,20 @@ function drawDude(cx, cy, color, label, opts) {
       ctx.arc(fx, fy, 3, 0, Math.PI * 2);
       ctx.fill();
     }
+  }
+
+  if (opts.dirty) {
+    // grime smudges - a handful of dark, semi-transparent marks over the
+    // body and legs, deterministic per-character (seeded off the draw
+    // position) so they stay put instead of flickering frame to frame
+    const seed = (cx * 7 + cy * 13) % 1;
+    ctx.fillStyle = 'rgba(30,25,18,0.3)';
+    [[-6, -8], [4, -20], [-3, -30], [6, -14], [-8, -25]].forEach(([ox, oy], i) => {
+      const jitter = ((seed + i * 0.37) % 1) * 3 - 1.5;
+      ctx.beginPath();
+      ctx.ellipse(ox + jitter, oy + jitter * 0.5, 2.5, 1.8, 0, 0, Math.PI * 2);
+      ctx.fill();
+    });
   }
 
   if (label) {
@@ -2934,9 +3303,12 @@ function drawBuildingExterior(b, camX, camY, nightFactor, faded) {
   // without one (b.yardDepth === 0) sit flush against the curb as before
   if (b.yardDepth > 0) {
     const yardY = sy + b.h + b.wallDepth;
-    ctx.fillStyle = '#5a8f4f';
+    // no tidy lawn out front of a seedy place - bare dirt/gravel instead
+    ctx.fillStyle = b.seedy ? '#4a4438' : '#5a8f4f';
     ctx.fillRect(sx, yardY, b.w, b.yardDepth);
-    ctx.fillStyle = hashNoise(b.x, b.y + 90) > 0.5 ? '#9a8f74' : '#8a9a80';
+    ctx.fillStyle = b.seedy
+      ? (hashNoise(b.x, b.y + 90) > 0.5 ? '#5a5548' : '#4f4a3e')
+      : (hashNoise(b.x, b.y + 90) > 0.5 ? '#9a8f74' : '#8a9a80');
     const walkW = dz.w - 6 + hashNoise(b.x + 5, b.y) * 8;
     ctx.fillRect(dz.x - camX + (dz.w - walkW) / 2, yardY, walkW, b.yardDepth);
   }
@@ -3049,10 +3421,10 @@ function drawRoads(camX, camY) {
     ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, WORLD_H);
   });
 
-  ctx.fillStyle = 'rgba(0,0,0,0.1)';
   ROAD_WEAR_SPOTS.forEach(spot => {
     const sx = spot.x - camX, sy = spot.y - camY;
     if (sx < -30 || sx > canvas.width + 30 || sy < -30 || sy > canvas.height + 30) return;
+    ctx.fillStyle = `rgba(0,0,0,${spot.a ?? 0.1})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, spot.r, spot.r * 0.5, 0, 0, Math.PI * 2);
     ctx.fill();
@@ -3129,6 +3501,29 @@ function drawRoads(camX, camY) {
     }
   });
 
+  // crosswalks - a zebra-striped band on each of the four approaches to
+  // every intersection, right where a car would stop for the light. Real
+  // crosswalk stripes run parallel to the road they cross (so tires track
+  // between them instead of grinding across), so a band on the north/south
+  // approach (crossing the vertical road) is made of vertical stripes
+  // spread across that road's width, and a band on the east/west approach
+  // (crossing the horizontal road) is made of horizontal stripes spread
+  // across its width.
+  ctx.fillStyle = 'rgba(255,255,255,0.85)';
+  const cwDepth = 26, cwStripe = 10, cwGap = 8, cwMargin = 10;
+  NUMBERED_STREETS.forEach(hs => {
+    NAMED_STREETS.forEach(vs => {
+      for (let sx = vs.x + cwMargin; sx < vs.x + ROAD_W - cwMargin; sx += cwStripe + cwGap) {
+        ctx.fillRect(sx - camX, hs.y - cwDepth - camY, cwStripe, cwDepth); // north approach
+        ctx.fillRect(sx - camX, hs.y + ROAD_W - camY, cwStripe, cwDepth); // south approach
+      }
+      for (let sy = hs.y + cwMargin; sy < hs.y + ROAD_W - cwMargin; sy += cwStripe + cwGap) {
+        ctx.fillRect(vs.x - cwDepth - camX, sy - camY, cwDepth, cwStripe); // west approach
+        ctx.fillRect(vs.x + ROAD_W - camX, sy - camY, cwDepth, cwStripe); // east approach
+      }
+    });
+  });
+
   ctx.fillStyle = sidewalk;
   NUMBERED_STREETS.forEach(hs => {
     NAMED_STREETS.forEach(vs => {
@@ -3158,7 +3553,8 @@ function drawRoads(camX, camY) {
     const textW = ctx.measureText(vs.name).width;
     for (let ly = 300; ly < WORLD_H; ly += labelSpacing) {
       const overlaps = numberedZones.some(z => ly - textW/2 < z.end && ly + textW/2 > z.start);
-      if (!overlaps) {
+      const inRiver = ly + textW/2 > RIVER_Y && ly - textW/2 < RIVER_Y + RIVER_H;
+      if (!overlaps && !inRiver) {
         ctx.save();
         ctx.translate(vs.x + 28 - camX, ly - camY);
         ctx.rotate(-Math.PI / 2);
@@ -3166,6 +3562,87 @@ function drawRoads(camX, camY) {
         ctx.restore();
       }
     }
+  });
+}
+
+// the river separating downtown from the south side, drawn on top of the
+// roads so it covers up Oak/Elm/Cedar's dead-ended pavement (they simply
+// don't get painted this far south, per drawRoads' maxY cap) and Pine/
+// Maple's plain asphalt gets a proper bridge deck laid over it instead
+function drawRiver(camX, camY) {
+  const y = RIVER_Y - camY;
+  if (y > canvas.height + 20 || y + RIVER_H < -20) return;
+
+  const grad = ctx.createLinearGradient(0, y, 0, y + RIVER_H);
+  grad.addColorStop(0, '#3a6fa0');
+  grad.addColorStop(0.5, '#2c5580');
+  grad.addColorStop(1, '#234868');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0 - camX, y, WORLD_W, RIVER_H);
+
+  // drifting shimmer streaks, same trick the park pond uses
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0 - camX, y, WORLD_W, RIVER_H);
+  ctx.clip();
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 10; i++) {
+    const phase = t * 0.3 + i * 1.7;
+    const sx = (i * 500 + Math.sin(phase) * 250) % (WORLD_W + 500) - 250 - camX;
+    const sy = y + RIVER_H * 0.5 + Math.sin(phase * 0.6 + i) * RIVER_H * 0.3;
+    ctx.fillStyle = `rgba(255,255,255,${(0.06 + 0.04 * Math.sin(phase * 1.2)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 110, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+
+  ctx.strokeStyle = 'rgba(0,0,0,0.25)';
+  ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(0 - camX, y); ctx.lineTo(WORLD_W - camX, y); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0 - camX, y + RIVER_H); ctx.lineTo(WORLD_W - camX, y + RIVER_H); ctx.stroke();
+
+  // bridges - a steel truss deck flanked by real sidewalks (matching the
+  // sidewalks the road has everywhere else), laid right over the water at
+  // every named street
+  NAMED_STREETS.filter(s => s.bridge).forEach(s => {
+    const bx = s.x - camX;
+
+    // sidewalks continue straight across on both sides of the deck
+    ctx.fillStyle = '#9a9a92';
+    ctx.fillRect(bx - SIDEWALK_W, y, SIDEWALK_W, RIVER_H);
+    ctx.fillRect(bx + ROAD_W, y, SIDEWALK_W, RIVER_H);
+
+    // steel deck
+    const deckGrad = ctx.createLinearGradient(bx, 0, bx + ROAD_W, 0);
+    deckGrad.addColorStop(0, '#5a6068');
+    deckGrad.addColorStop(0.5, '#868d96');
+    deckGrad.addColorStop(1, '#5a6068');
+    ctx.fillStyle = deckGrad;
+    ctx.fillRect(bx, y, ROAD_W, RIVER_H);
+
+    // truss cross-bracing, the classic zigzag of a steel girder bridge
+    ctx.strokeStyle = 'rgba(20,25,30,0.5)';
+    ctx.lineWidth = 3;
+    const braceGap = 44;
+    ctx.beginPath();
+    for (let by = 0; by < RIVER_H; by += braceGap) {
+      ctx.moveTo(bx, y + by);
+      ctx.lineTo(bx + ROAD_W, y + by + braceGap / 2);
+      ctx.lineTo(bx, y + by + braceGap);
+    }
+    ctx.stroke();
+
+    // faint lane line down the middle of the deck, same as the roads
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    for (let ly = 10; ly < RIVER_H; ly += 30) {
+      ctx.fillRect(bx + ROAD_W / 2 - 1, y + ly, 2, 16);
+    }
+
+    // dark metal railings along the outer edge of each sidewalk
+    ctx.fillStyle = '#33383e';
+    ctx.fillRect(bx - SIDEWALK_W - 4, y - 4, 4, RIVER_H + 8);
+    ctx.fillRect(bx + ROAD_W + SIDEWALK_W, y - 4, 4, RIVER_H + 8);
   });
 }
 
@@ -3342,6 +3819,21 @@ NAMED_STREETS.forEach(s => {
   }
 });
 
+// the south side's pavement is a lot more neglected - extra, bigger,
+// darker potholes/cracks layered on top of the normal pass, on 5th/6th
+// St and on the stretch of every named street south of the river
+['5th St', '6th St'].forEach(name => {
+  const s = NUMBERED_STREETS.find(st => st.name === name);
+  for (let i = 0; i < 70; i++) {
+    ROAD_WEAR_SPOTS.push({ x: Math.random() * WORLD_W, y: s.y + Math.random() * ROAD_W, r: 8 + Math.random() * 18, a: 0.16 + Math.random() * 0.12 });
+  }
+});
+NAMED_STREETS.forEach(s => {
+  for (let i = 0; i < 45; i++) {
+    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: RIVER_Y + RIVER_H + Math.random() * (WORLD_H - RIVER_Y - RIVER_H), r: 8 + Math.random() * 18, a: 0.16 + Math.random() * 0.12 });
+  }
+});
+
 // right-hand-traffic lane for a car on a street, given its direction:
 // heading east -> south lane, west -> north lane; heading south -> west
 // lane, north -> east lane. Lanes sit a quarter of the road width in
@@ -3351,13 +3843,45 @@ function trafficLane(car) {
   return car.street.x + (car.dir > 0 ? ROAD_W * 0.25 : ROAD_W * 0.75);
 }
 
+// a non-bridge named street (Oak/Elm/Cedar) doesn't actually cross the
+// river, so a vehicle confined to it needs to stay on whichever side it
+// starts on rather than being free to bounce straight through the water -
+// bridge streets (Pine/Maple) keep the full north-to-south range
+function verticalStreetBounds(street) {
+  if (street.bridge) return { minY: 100, maxY: WORLD_H - 100 };
+  return Math.random() < 0.5
+    ? { minY: 100, maxY: RIVER_Y - 100 }
+    : { minY: RIVER_Y + RIVER_H + 100, maxY: WORLD_H - 100 };
+}
+
+// shared bounce-and-lane-ease movement for any street vehicle (car or
+// bike) - bounces between its street's min/max and eases sideways into
+// the correct lane for its current direction, unless held at a light
+function moveVehicleAlongLane(v, dt, stopped) {
+  if (v.axis === 'h') {
+    if (!stopped) {
+      v.x += v.dir * v.speed * dt;
+      if (v.x > v.maxX) { v.x = v.maxX; v.dir = -1; }
+      if (v.x < v.minX) { v.x = v.minX; v.dir = 1; }
+    }
+    v.y += (trafficLane(v) - v.y) * 0.06 * dt;
+  } else {
+    if (!stopped) {
+      v.y += v.dir * v.speed * dt;
+      if (v.y > v.maxY) { v.y = v.maxY; v.dir = -1; }
+      if (v.y < v.minY) { v.y = v.minY; v.dir = 1; }
+    }
+    v.x += (trafficLane(v) - v.x) * 0.06 * dt;
+  }
+}
+
 // background traffic - at least 5 cars, up to 10, each sticking to one
 // street and driving back and forth in the proper lane for their current
 // direction. Two police cruisers always patrol on top of that.
 const CAR_COLORS = ['#3a5f8f', '#8f3a3a', '#3a8f5a', '#8f8f3a', '#5f3a8f', '#707070', '#222222', '#8f5a2a'];
 const trafficCars = [];
 {
-  const carCount = 5 + Math.floor(Math.random() * 6);
+  const carCount = 7 + Math.floor(Math.random() * 8);
   for (let i = 0; i < carCount; i++) {
     const horizontal = Math.random() < 0.5;
     const dir = Math.random() < 0.5 ? 1 : -1;
@@ -3368,7 +3892,8 @@ const trafficCars = [];
       trafficCars.push(car);
     } else {
       const street = NAMED_STREETS[Math.floor(Math.random() * NAMED_STREETS.length)];
-      const car = { axis: 'v', street, y: 150 + Math.random() * (WORLD_H - 300), minY: 100, maxY: WORLD_H - 100, dir, speed: 1.6 + Math.random() * 1.2, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+      const { minY, maxY } = verticalStreetBounds(street);
+      const car = { axis: 'v', street, y: minY + Math.random() * (maxY - minY), minY, maxY, dir, speed: 1.6 + Math.random() * 1.2, color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
       car.x = trafficLane(car);
       trafficCars.push(car);
     }
@@ -3381,6 +3906,56 @@ const trafficCars = [];
   const cruiser2 = { axis: 'v', street: NAMED_STREETS[1], y: 1400, minY: 100, maxY: WORLD_H - 100, dir: -1, speed: 2.4, color: '#ffffff', police: true };
   cruiser2.x = trafficLane(cruiser2);
   trafficCars.push(cruiser2);
+
+  // a handful of cars explicitly pinned to the south side's own streets,
+  // so the new neighborhood has real traffic on it rather than relying on
+  // the random pool to occasionally wander down there
+  const southSpecs = [
+    { axis: 'h', street: NUMBERED_STREETS.find(s => s.name === '5th St'), x: 800,  dir: 1 },
+    { axis: 'h', street: NUMBERED_STREETS.find(s => s.name === '5th St'), x: 2600, dir: -1 },
+    { axis: 'h', street: NUMBERED_STREETS.find(s => s.name === '6th St'), x: 1500, dir: 1 },
+    { axis: 'h', street: NUMBERED_STREETS.find(s => s.name === '6th St'), x: 3400, dir: -1 },
+    { axis: 'v', street: NAMED_STREETS.find(s => s.name === 'Pine St'),  y: RIVER_Y + RIVER_H + 400, dir: 1 },
+    { axis: 'v', street: NAMED_STREETS.find(s => s.name === 'Maple St'), y: RIVER_Y + RIVER_H + 600, dir: -1 },
+  ];
+  southSpecs.forEach(spec => {
+    const car = {
+      ...spec,
+      minX: 100, maxX: WORLD_W - 100,
+      minY: RIVER_Y + RIVER_H + 100, maxY: WORLD_H - 100,
+      speed: 1.6 + Math.random() * 1.2,
+      color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]
+    };
+    if (spec.axis === 'h') car.y = trafficLane(car);
+    else car.x = trafficLane(car);
+    trafficCars.push(car);
+  });
+}
+
+// background motorcycle riders - same street/lane/light rules as traffic
+// cars, just a much smaller headcount to start
+const BIKE_COLORS = ['#8f2e2e', '#2e8f3e', '#222222', '#2e4a8f', '#707070'];
+const trafficBikes = [];
+{
+  const bikeCount = 3;
+  for (let i = 0; i < bikeCount; i++) {
+    const horizontal = Math.random() < 0.5;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    const rider = { ...randomPersonStyle(), color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)] };
+    const color = BIKE_COLORS[Math.floor(Math.random() * BIKE_COLORS.length)];
+    if (horizontal) {
+      const street = NUMBERED_STREETS[Math.floor(Math.random() * NUMBERED_STREETS.length)];
+      const bike = { axis: 'h', street, x: 150 + Math.random() * (WORLD_W - 300), minX: 100, maxX: WORLD_W - 100, dir, speed: 2.0 + Math.random() * 1.4, color, rider };
+      bike.y = trafficLane(bike);
+      trafficBikes.push(bike);
+    } else {
+      const street = NAMED_STREETS[Math.floor(Math.random() * NAMED_STREETS.length)];
+      const { minY, maxY } = verticalStreetBounds(street);
+      const bike = { axis: 'v', street, y: minY + Math.random() * (maxY - minY), minY, maxY, dir, speed: 2.0 + Math.random() * 1.4, color, rider };
+      bike.x = trafficLane(bike);
+      trafficBikes.push(bike);
+    }
+  }
 }
 
 // Traffic lights: a synchronized city-wide cycle - all east-west traffic
@@ -3454,8 +4029,11 @@ function carShouldStopAtLight(car, timestamp) {
 // draw scale, for the longer side-view orientation) or they'd still
 // visually overlap even while "holding back"
 const CAR_FOLLOW_GAP = 150;
+// checked against both cars and bikes sharing the same street/lane, so a
+// bike never coasts straight into the back of a car (or another bike) and
+// vice versa
 function carAhead(car) {
-  return trafficCars.some(other => {
+  return [...trafficCars, ...trafficBikes].some(other => {
     if (other === car || other.axis !== car.axis || other.dir !== car.dir || other.street !== car.street) return false;
     const ahead = car.axis === 'h'
       ? (car.dir > 0 ? other.x - car.x : car.x - other.x)
@@ -3558,8 +4136,21 @@ function drawOutside() {
   camY = Math.max(0, Math.min(WORLD_H - canvas.height, camY));
   const nightFactor = getNightFactor(performance.now());
 
-  ctx.fillStyle = '#4a7c3c';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // ground color switches to a duller, grayer tone south of the river -
+  // the seedy side of town doesn't get the same well-kept green
+  const southBankScreenY = RIVER_Y + RIVER_H - camY;
+  if (southBankScreenY <= 0) {
+    ctx.fillStyle = '#52564a';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else if (southBankScreenY >= canvas.height) {
+    ctx.fillStyle = '#4a7c3c';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.fillStyle = '#4a7c3c';
+    ctx.fillRect(0, 0, canvas.width, southBankScreenY);
+    ctx.fillStyle = '#52564a';
+    ctx.fillRect(0, southBankScreenY, canvas.width, canvas.height - southBankScreenY);
+  }
 
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   ctx.lineWidth = 1;
@@ -3591,6 +4182,7 @@ function drawOutside() {
   }
 
   drawRoads(camX, camY);
+  drawRiver(camX, camY);
   drawParkGround(camX, camY);
 
   const currentPhase = getLightPhase(performance.now());
@@ -3613,6 +4205,7 @@ function drawOutside() {
     ...(carParked ? [{ type: 'parkedcar', obj: carParked, sortY: carParked.y }] : []),
     ...(!player.hasCar ? [{ type: 'parkedcar', obj: CAR_SHOWROOM_SPOT, sortY: CAR_SHOWROOM_SPOT.y }] : []),
     ...trafficCars.map(car => ({ type: 'trafficcar', obj: car, sortY: car.y })),
+    ...trafficBikes.map(bike => ({ type: 'trafficbike', obj: bike, sortY: bike.y })),
     { type: 'player', sortY: player.y + player.h }
   ];
   drawables.sort((a, b) => a.sortY - b.sortY);
@@ -3624,7 +4217,7 @@ function drawOutside() {
       const c = d.obj;
       const isDown = c.knockedDownUntil && performance.now() < c.knockedDownUntil;
       drawBloodSpot(c, camX, camY);
-      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor, knockedDown: isDown, moving: !!c.path });
+      drawDude(c.x - camX, c.y - camY, c.color, null, { facing: c.facing, gender: c.gender, hairColor: c.hairColor, hairstyle: c.hairstyle, skinTone: c.skinTone, skirt: c.skirt, skirtColor: c.skirtColor, dirty: c.dirty, knockedDown: isDown, moving: !!c.path });
     } else if (d.type === 'tree') {
       drawTree(PARK.x + d.obj.x, PARK.y + d.obj.y, camX, camY);
     } else if (d.type === 'citytree') {
@@ -3644,6 +4237,13 @@ function drawOutside() {
       const car = d.obj;
       const facing = car.axis === 'h' ? (car.dir > 0 ? 'right' : 'left') : (car.dir > 0 ? 'down' : 'up');
       drawCar(car.x - camX, car.y - camY, facing, car.color, car.police, nightFactor);
+    } else if (d.type === 'trafficbike') {
+      const bike = d.obj;
+      const facing = bike.axis === 'h' ? (bike.dir > 0 ? 'right' : 'left') : (bike.dir > 0 ? 'down' : 'up');
+      const bx = bike.x - camX, by = bike.y - camY;
+      drawMotorcycle(bx, by, facing, bike.color, true);
+      const r = bike.rider;
+      drawDude(bx, by, r.color, null, { facing, gender: r.gender, hairColor: r.hairColor, hairstyle: r.hairstyle, skinTone: r.skinTone, riding: true });
     } else {
       const px = player.x + player.w / 2 - camX;
       const py = player.y + player.h - camY;
@@ -3767,19 +4367,227 @@ function drawChair(rx, ry, s) {
 function drawCouch(rx, ry, c) {
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fillRect(rx + c.x, ry + c.y + c.h, c.w, 5);
-  ctx.fillStyle = '#7a3f5f';
+  const grad = ctx.createLinearGradient(0, ry + c.y, 0, ry + c.y + c.h);
+  grad.addColorStop(0, shadeColor('#7a3f5f', 20));
+  grad.addColorStop(1, shadeColor('#7a3f5f', -20));
+  ctx.fillStyle = grad;
   ctx.fillRect(rx + c.x, ry + c.y, c.w, c.h);
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 2;
   ctx.strokeRect(rx + c.x, ry + c.y, c.w, c.h);
+  ctx.fillStyle = 'rgba(255,255,255,0.12)';
+  ctx.fillRect(rx + c.x, ry + c.y, c.w, 6);
   ctx.fillStyle = 'rgba(0,0,0,0.18)';
-  ctx.fillRect(rx + c.x, ry + c.y, c.w, 12);
+  ctx.fillRect(rx + c.x, ry + c.y + 6, c.w, 6);
+  // cushion divider
   ctx.strokeStyle = 'rgba(0,0,0,0.2)';
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.moveTo(rx + c.x + c.w / 2, ry + c.y + 12);
   ctx.lineTo(rx + c.x + c.w / 2, ry + c.y + c.h);
   ctx.stroke();
+}
+
+function drawBed(rx, ry, b) {
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.fillRect(rx + b.x, ry + b.y + b.h, b.w, 5);
+  ctx.fillStyle = '#5a4a3a'; // frame
+  ctx.fillRect(rx + b.x, ry + b.y, b.w, b.h);
+  const grad = ctx.createLinearGradient(0, ry + b.y, 0, ry + b.y + b.h);
+  grad.addColorStop(0, shadeColor('#3a5a7a', 14));
+  grad.addColorStop(1, shadeColor('#3a5a7a', -14));
+  ctx.fillStyle = grad; // blanket
+  ctx.fillRect(rx + b.x + 4, ry + b.y + 22, b.w - 8, b.h - 26);
+  ctx.fillStyle = '#e8e0d0'; // pillow
+  ctx.fillRect(rx + b.x + 8, ry + b.y + 6, b.w - 16, 16);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + b.x, ry + b.y, b.w, b.h);
+}
+
+function drawBarstool(rx, ry, s) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(rx + s.x, ry + s.y + 4, 9, 4, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#707070'; // footrest ring
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.arc(rx + s.x, ry + s.y + 2, 10, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.fillStyle = '#3a3a3a'; // round seat
+  ctx.beginPath();
+  ctx.arc(rx + s.x, ry + s.y, 8, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.beginPath();
+  ctx.arc(rx + s.x - 2, ry + s.y - 2, 3, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawSink(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h, r.w, 4);
+  ctx.fillStyle = '#c8ccd0';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.fillStyle = '#8a949e';
+  ctx.fillRect(rx + r.x + 6, ry + r.y + 6, r.w - 12, r.h - 14);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.fillStyle = '#a0a8b0'; // faucet
+  ctx.fillRect(rx + r.x + r.w / 2 - 2, ry + r.y - 8, 4, 10);
+}
+
+// tank against the wall on the left, bowl extending right - matches a
+// toilet mounted on a side wall with the open side facing into the room
+function drawToilet(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.ellipse(rx + r.x + r.w + 3, ry + r.y + r.h / 2, 4, r.w / 2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#f0f0f0';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h * 0.15, r.w * 0.4, r.h * 0.7); // tank
+  ctx.fillRect(rx + r.x + r.w * 0.3, ry + r.y, r.w * 0.7, r.h); // bowl
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.strokeRect(rx + r.x + r.w * 0.3, ry + r.y, r.w * 0.7, r.h);
+  ctx.beginPath();
+  ctx.ellipse(rx + r.x + r.w * 0.68, ry + r.y + r.h / 2, r.w * 0.28, r.h * 0.32, 0, 0, Math.PI * 2);
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.stroke();
+}
+
+function drawShower(rx, ry, r, active) {
+  ctx.fillStyle = 'rgba(140,180,200,0.18)';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = '#9ab8c8';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  // angled glass partition, corner to corner - the classic quadrant shower
+  // door look, purely decorative
+  ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(rx + r.x + r.w * 0.35, ry + r.y);
+  ctx.lineTo(rx + r.x, ry + r.y + r.h * 0.85);
+  ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.6)';
+  [0.35, 0.65].forEach(t => {
+    ctx.beginPath();
+    ctx.arc(rx + r.x + r.w * 0.35 * (1 - t), ry + r.y + r.h * 0.85 * t, 1.6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+  ctx.fillStyle = '#c8ccd0'; // showerhead
+  ctx.fillRect(rx + r.x + r.w / 2 - 7, ry + r.y + 4, 14, 5);
+  ctx.strokeStyle = active ? 'rgba(200,235,255,0.7)' : 'rgba(255,255,255,0.3)';
+  ctx.lineWidth = active ? 2 : 1;
+  // when running, extra water streaks plus a puddle at the base - purely a
+  // visual treat for "standing under the water", no gameplay effect
+  const streakCount = active ? 5 : 3;
+  const streakTop = active ? (performance.now() / 80) % 8 : 0;
+  for (let i = 0; i < streakCount; i++) {
+    const sx = r.x + r.w / 2 - (streakCount - 1) * 2 + i * 4;
+    ctx.beginPath();
+    ctx.moveTo(rx + sx, ry + r.y + 10 + streakTop);
+    ctx.lineTo(rx + sx, ry + r.y + r.h - 10);
+    ctx.stroke();
+  }
+  if (active) {
+    ctx.fillStyle = 'rgba(200,235,255,0.4)';
+    ctx.beginPath();
+    ctx.ellipse(rx + r.x + r.w / 2, ry + r.y + r.h - 6, r.w / 2 - 6, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+function drawBathroomWalls(rx, ry) {
+  ctx.fillStyle = '#000';
+  getBathroomWallObstacles().forEach(w => {
+    ctx.fillRect(rx + w.x, ry + w.y, w.w, w.h);
+  });
+}
+
+function drawStove(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h, r.w, 4);
+  ctx.fillStyle = '#2a2a2a';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.4)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.fillStyle = '#555';
+  [[0.28, 0.32], [0.72, 0.32], [0.28, 0.72], [0.72, 0.72]].forEach(([fx, fy]) => {
+    ctx.beginPath();
+    ctx.arc(rx + r.x + r.w * fx, ry + r.y + r.h * fy, 6, 0, Math.PI * 2);
+    ctx.fill();
+  });
+}
+
+function drawFridge(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h, r.w, 4);
+  ctx.fillStyle = '#d8dce0';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.2)';
+  ctx.beginPath();
+  ctx.moveTo(rx + r.x, ry + r.y + r.h * 0.4);
+  ctx.lineTo(rx + r.x + r.w, ry + r.y + r.h * 0.4);
+  ctx.stroke();
+  ctx.fillStyle = '#a0a8b0'; // handle
+  ctx.fillRect(rx + r.x + r.w - 6, ry + r.y + 6, 3, r.h * 0.3);
+}
+
+function drawWasher(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h, r.w, 4);
+  ctx.fillStyle = '#e0e0e0';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  const cx = rx + r.x + r.w / 2, cy = ry + r.y + r.h * 0.55, rad = Math.min(r.w, r.h) * 0.32;
+  ctx.fillStyle = '#2a2a2a'; // door
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(140,180,210,0.5)'; // drum window
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#8f8f5f'; // control knob
+  ctx.beginPath();
+  ctx.arc(rx + r.x + r.w * 0.2, ry + r.y + r.h * 0.15, 4, 0, Math.PI * 2);
+  ctx.fill();
+}
+
+function drawDryer(rx, ry, r) {
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillRect(rx + r.x, ry + r.y + r.h, r.w, 4);
+  ctx.fillStyle = '#d0d0d0';
+  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 2;
+  ctx.strokeRect(rx + r.x, ry + r.y, r.w, r.h);
+  const cx = rx + r.x + r.w / 2, cy = ry + r.y + r.h * 0.55, rad = Math.min(r.w, r.h) * 0.32;
+  ctx.fillStyle = '#2a2a2a'; // door
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = 'rgba(210,170,120,0.5)'; // drum window (warm tint vs washer's cool tint)
+  ctx.beginPath();
+  ctx.arc(cx, cy, rad * 0.7, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = '#8f8f5f'; // control knob
+  ctx.beginPath();
+  ctx.arc(rx + r.x + r.w * 0.2, ry + r.y + r.h * 0.15, 4, 0, Math.PI * 2);
+  ctx.fill();
 }
 
 function drawBookshelf(rx, ry, b) {
@@ -3901,9 +4709,27 @@ function drawInterior() {
     drawRug(rx, ry, HOME_FURNITURE_LAYOUT.rug);
   }
   (currentBuilding.tables || []).forEach(t => drawTable(rx, ry, t));
+  (currentBuilding.bedRects || []).forEach(b => drawBed(rx, ry, b));
+  if (hasBathroom(currentBuilding)) {
+    drawBathroomWalls(rx, ry);
+    drawSink(rx, ry, BATHROOM_FIXTURES.sink);
+    drawToilet(rx, ry, BATHROOM_FIXTURES.toilet);
+    drawShower(rx, ry, BATHROOM_FIXTURES.shower, player.showering);
+  }
+  if (hasKitchen(currentBuilding)) {
+    drawFridge(rx, ry, KITCHEN_FIXTURES.fridge);
+    drawStove(rx, ry, KITCHEN_FIXTURES.stove);
+    drawSink(rx, ry, KITCHEN_FIXTURES.kitchenSink);
+  }
+  if (hasLaundry(currentBuilding)) {
+    drawWasher(rx, ry, LAUNDRY_FIXTURES.washer);
+    drawDryer(rx, ry, LAUNDRY_FIXTURES.dryer);
+  }
   if (currentBuilding.name === 'Home') {
     if (player.homeFurniture.includes('bookshelf')) drawBookshelf(rx, ry, HOME_FURNITURE_LAYOUT.bookshelf);
     if (player.homeFurniture.includes('couch')) drawCouch(rx, ry, HOME_FURNITURE_LAYOUT.couch);
+    if (player.homeFurniture.includes('bed')) drawBed(rx, ry, HOME_FURNITURE_LAYOUT.bed);
+    if (player.homeFurniture.includes('barstools')) HOME_FURNITURE_LAYOUT.barstools.forEach(s => drawBarstool(rx, ry, s));
   }
   // only draw chair icons for actual chairs (table seats) - the couch's
   // own seats are already part of its drawn shape above
@@ -3925,11 +4751,11 @@ function drawInterior() {
     if (d.type === 'npc') {
       const isDown = d.obj.knockedDownUntil && performance.now() < d.obj.knockedDownUntil;
       drawBloodSpot(d.obj, -rx, -ry);
-      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, knockedDown: isDown, moving: Math.hypot(d.obj.targetX - d.obj.x, d.obj.targetY - d.obj.y) > 2 });
+      drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, dirty: d.obj.dirty, knockedDown: isDown, moving: Math.hypot(d.obj.targetX - d.obj.x, d.obj.targetY - d.obj.y) > 2 });
     } else if (d.type === 'displaybike') {
       drawMotorcycle(rx + d.obj.x, ry + d.obj.y, d.obj.facing, d.obj.color);
     } else {
-      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, moving: player.moving });
+      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, moving: player.moving, lying: player.lying, sitting: player.sitting });
     }
   });
 
@@ -3959,14 +4785,32 @@ function drawDialogueUI() {
     ctx.fillText(hint, canvas.width/2, canvas.height - 23);
   }
 
-  if (!dialogueOpen && (nearbySeat || player.sitting)) {
+  if (!dialogueOpen) {
+    let hint = null;
+    if (player.sitting) hint = '[E] to stand';
+    else if (player.lying) hint = '[E] to get up';
+    else if (player.showering) hint = '[E] to step out';
+    else if (nearbySeat) hint = '[E] to sit';
+    else if (nearbyBed) hint = '[E] to lie down';
+    else if (nearbyShower) hint = '[E] to shower';
+    else if (nearbyFixture) hint = nearbyFixture.hint;
+    if (hint) {
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      const hw = ctx.measureText(hint).width;
+      drawPanel(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24, 'rgba(30,30,30,0.75)', 'rgba(5,5,5,0.75)', 'rgba(255,255,255,0.25)', 6);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    }
+  }
+
+  if (performance.now() < flavorMessageUntil) {
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
-    const hint = player.sitting ? '[E] to stand' : '[E] to sit';
-    const hw = ctx.measureText(hint).width;
-    drawPanel(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24, 'rgba(30,30,30,0.75)', 'rgba(5,5,5,0.75)', 'rgba(255,255,255,0.25)', 6);
+    const hw = ctx.measureText(flavorMessage).width;
+    drawPanel(canvas.width/2 - hw/2 - 10, canvas.height - 70, hw + 20, 26, 'rgba(30,30,30,0.85)', 'rgba(5,5,5,0.85)', 'rgba(255,255,255,0.3)', 6);
     ctx.fillStyle = '#fff';
-    ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    ctx.fillText(flavorMessage, canvas.width/2, canvas.height - 52);
   }
 
   if (dialogueOpen && nearbyNPC && dialogueTree) {
@@ -4304,6 +5148,9 @@ function loadGame() {
     const data = JSON.parse(raw);
     Object.assign(player, data.player);
     player.sitting = false; // never resume a save mid-sit
+    player.lying = false; // never resume a save mid-lie-down
+    player.showering = false; // never resume a save mid-shower
+    player.restSpot = null;
     scene = data.scene === 'interior' ? 'interior' : 'outside';
     currentBuilding = (data.currentBuildingIndex >= 0 && buildings[data.currentBuildingIndex]) ? buildings[data.currentBuildingIndex] : null;
     motorcycleParked = data.motorcycleParked || null;
