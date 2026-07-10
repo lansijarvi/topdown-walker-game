@@ -576,8 +576,7 @@ const WALL_THICK = 24;
 
 // default small-talk tree used by any NPC without a custom conversation
 const helloTree = {
-  start:  { speaker: 'npc', text: 'Hello!', next: 'reply' },
-  reply:  { speaker: 'you', text: 'Hello!', end: true }
+  start: { speaker: 'npc', text: 'Hello!', end: true }
 };
 
 // Ivy's tattoo conversation
@@ -684,6 +683,72 @@ const breeTree = {
   },
   tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
   noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
+};
+
+// haircut is $25, an optional recolor after is another $25 - Bob and
+// Betty both work off this same tree
+const HAIRCUT_PRICE = 25;
+const HAIR_COLOR_PRICE = 25;
+const HAIRCUTS = [
+  { key: 'bald',    name: 'Bald' },
+  { key: 'long',    name: 'Long Hair' },
+  { key: 'buzz',    name: 'Buzz Cut' },
+  { key: 'mohawk',  name: 'Mohawk' },
+  { key: 'square',  name: 'Flat Top' }
+];
+const HAIR_COLORS = [
+  { key: '#1a1a1a', name: 'Black' },
+  { key: '#4a3020', name: 'Brown' },
+  { key: '#d4af6a', name: 'Blonde' },
+  { key: '#3a8f4a', name: 'Green' },
+  { key: '#a8342a', name: 'Red' }
+];
+
+const barberTree = {
+  start: {
+    speaker: 'npc',
+    text: 'Need a haircut?',
+    options: () => [
+      ...HAIRCUTS.map(h => ({ label: `${h.name} - $${HAIRCUT_PRICE}`, next: 'checkCutFunds', hairstyle: h.key })),
+      { label: 'Just browsing', next: 'bye' }
+    ]
+  },
+  checkCutFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= HAIRCUT_PRICE ? `That'll be $${HAIRCUT_PRICE}.` : `That's $${HAIRCUT_PRICE}. You're a bit short.`,
+    next: (p) => p.money >= HAIRCUT_PRICE ? 'applyCut' : 'tooExpensive'
+  },
+  applyCut: {
+    speaker: 'npc',
+    text: 'There you go, all cut!',
+    next: 'colorPrompt',
+    effect: (p) => { p.money -= HAIRCUT_PRICE; p.hairstyle = p.pendingHairstyle; }
+  },
+  colorPrompt: {
+    speaker: 'npc',
+    text: `Want to color it too? Another $${HAIR_COLOR_PRICE}.`,
+    options: () => [
+      ...HAIR_COLORS.map(c => ({ label: `${c.name} - $${HAIR_COLOR_PRICE}`, next: 'checkColorFunds', haircolor: c.key })),
+      { label: 'No color, thanks', next: 'bye' }
+    ]
+  },
+  checkColorFunds: {
+    speaker: 'npc',
+    text: (p) => p.money >= HAIR_COLOR_PRICE ? `That's $${HAIR_COLOR_PRICE}.` : `That's $${HAIR_COLOR_PRICE}. You're short on cash - guess it stays natural.`,
+    next: (p) => p.money >= HAIR_COLOR_PRICE ? 'applyColor' : 'bye'
+  },
+  applyColor: {
+    speaker: 'npc',
+    text: 'Looking sharp!',
+    end: true,
+    effect: (p) => { p.money -= HAIR_COLOR_PRICE; p.hairColor = p.pendingHairColor; }
+  },
+  tooExpensive: {
+    speaker: 'npc', text: 'Come back when you have the cash.', end: true
+  },
+  bye: {
+    speaker: 'npc', text: 'Look good out there!', end: true
+  }
 };
 
 const GUN_PRICE = 250;
@@ -1158,14 +1223,19 @@ function tableSet(...spots) {
 // a lie-down bed - the interact spot sits just past the foot of the bed so
 // the player can reach it without needing to be inside its (blocking)
 // footprint, same trick tableAt() uses for chairs
-function bedAt(cx, cy, w, h, facing) {
+function bedAt(cx, cy, w, h) {
+  const rect = { x: cx - w / 2, y: cy - h / 2, w, h };
   return {
-    rect: { x: cx - w / 2, y: cy - h / 2, w, h },
-    // "spot" is the walkable approach point just past the foot of the bed
-    // (used to detect you're close enough); lieX/lieY is the bed's own
+    rect,
+    // a bed can be climbed into from any side, not just one fixed
+    // approach point - "spot" carries the bed's own rect so proximity
+    // is checked against the whole footprint; lieX/lieY is the bed's
     // center, where the player actually gets teleported to lie down so
-    // they end up drawn on the bed instead of on the floor next to it
-    spot: { x: cx, y: cy + h / 2 + 14, facing: facing || 'up', lieX: cx, lieY: cy }
+    // they end up drawn on the bed instead of on the floor next to it.
+    // lieAngle rotates the sprite to match the bed's own shape - a
+    // landscape bed (wider than tall, headboard against a side wall)
+    // needs the character rotated onto their side to fit its long axis
+    spot: { rect, lieX: cx, lieY: cy, lieAngle: w > h ? -Math.PI / 2 : 0 }
   };
 }
 function bedSet(...spots) {
@@ -1177,7 +1247,7 @@ function bedSet(...spots) {
 
 const buildings = [
   {x: 20, y: 220, w: 180, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tattoo Parlor', floor: '#3a2a2a', npcs: [{name:'Inkwell Ivy', color:'#c25fae', dialogue: ivyTree}]},
-  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [{name:'Barber Bob', color:'#8f8f5f'}, {name:'Barber Betty', color:'#c2905f'}]},
+  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [{name:'Barber Bob', color:'#8f8f5f', dialogue: barberTree}, {name:'Barber Betty', color:'#c2905f', dialogue: barberTree}]},
   {x: 570, y: 170, w: 160, h: 110, wallH: 100,roof: '#4a6a8a', wall: '#37506a', name: 'Pharmacy', floor: '#2f3a44', npcs: [{name:'Pharmacist Pat', color:'#8fc25f'}]},
   {x: 2940, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f', dialogue: thriftStoreTree}]},
   {x: 3180, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
@@ -1209,7 +1279,7 @@ const buildings = [
   ]},
   {x: 1650, y: 720, w: 260, h: 110, wallH: 90, roof: '#4a6a8a', wall: '#37506a', name: 'Home', floor: '#4a3f33', npcs: []},
   {x: 2220, y: 700, w: 240, h: 120, wallH: 100, roof: '#c25f5f', wall: '#8f3f3f', name: 'Hospital', floor: '#e8e8e8', npcs: [{name:'Nurse Nancy', color:'#5f8fc2'}, {name:'Dr. Dan', color:'#eaeaea'}],
-    ...bedSet(bedAt(110, 110, 70, 90, 'up'), bedAt(390, 110, 70, 90, 'up'))},
+    ...bedSet(bedAt(110, 110, 70, 90), bedAt(390, 110, 70, 90))},
 
   {x: 90, y: 1780, w: 220, h: 100, wallH: 80, roof: '#4a8a5a', wall: '#376a44', name: 'Used Motorcycles', floor: '#3a3025', npcs: [{name:'Slick Sal', color:'#c2905f', dialogue: motoStoreTree}], displayBikes: [
     { x: 430, y: 80,  facing: 'left', color: '#8f2e2e' }, // red
@@ -1446,6 +1516,7 @@ const player = {
   wheelieUntil: 0,
   sitting: false,
   lying: false,
+  lieAngle: 0,
   showering: false,
   restSpot: null,
   homeFurniture: [],
@@ -1655,10 +1726,12 @@ function pressInteract() {
     if (nearbySeat.flavor) showFlavorMessage(nearbySeat.flavor);
   } else if (nearbyBed) {
     player.lying = true;
-    player.restSpot = { x: nearbyBed.x, y: nearbyBed.y, facing: nearbyBed.facing };
+    player.lieAngle = nearbyBed.lieAngle || 0;
+    // return to wherever you actually approached from, not one fixed
+    // side - that's what makes climbing in from any side work
+    player.restSpot = { x: player.x + player.w / 2, y: player.y + player.h / 2, facing: player.facing };
     player.x = nearbyBed.lieX - player.w / 2;
     player.y = nearbyBed.lieY - player.h / 2;
-    player.facing = nearbyBed.facing;
   } else if (nearbyShower) {
     player.showering = true;
     player.restSpot = { x: nearbyShower.x, y: nearbyShower.y, facing: nearbyShower.facing };
@@ -1684,6 +1757,8 @@ function selectDialogueOption(idx) {
     }
     if (options[idx].bet) startBlackjackHand(player, options[idx].bet);
     if (options[idx].item) player.pendingFurnitureItem = options[idx].item;
+    if (options[idx].hairstyle) player.pendingHairstyle = options[idx].hairstyle;
+    if (options[idx].haircolor) player.pendingHairColor = options[idx].haircolor;
     enterNode(options[idx].next);
   }
   syncDialogueOptionsOverlay();
@@ -1808,6 +1883,16 @@ function enterBuilding(b) {
   currentBuilding = b;
   player.x = ROOM_W / 2 - player.w / 2;
   player.y = ROOM_H - 110;
+  // safety net: if a piece of owned furniture (or anything else) happens
+  // to land right on the spawn point, walk it down toward the door
+  // instead of dropping the player inside a solid obstacle they can't
+  // move out of
+  const spawnObstacles = getBuildingFurnitureObstacles(b);
+  let spawnGuard = 0;
+  while (spawnGuard < 25 && spawnObstacles.some(o => rectsOverlap({ x: player.x, y: player.y, w: player.w, h: player.h }, o))) {
+    player.y += 10;
+    spawnGuard++;
+  }
   player.facing = 'down';
   player.onMotorcycle = false; // park it outside - nobody's riding through a doorway
   player.onCar = false;
@@ -1890,10 +1975,11 @@ const HOME_FURNITURE_LAYOUT = {
   bookshelf: { x: 24,  y: 100, w: 24,  h: 110 },
   couch:     { x: 70,  y: 100, w: 140, h: 40 },
   rug:       { x: 60,  y: 160, w: 200, h: 90 },
-  bed:       { x: 250, y: 190, w: 70,  h: 90 },
+  // landscape - headboard against the left wall, feet pointing into the room
+  bed:       { x: 24,  y: 220, w: 90,  h: 70 },
   barstools: [
-    { x: 100, y: 220, facing: 'down' },
-    { x: 130, y: 220, facing: 'down' }
+    { x: 140, y: 220, facing: 'down' },
+    { x: 170, y: 220, facing: 'down' }
   ]
 };
 
@@ -1964,8 +2050,11 @@ function getHomeCouchSeats() {
 
 function getHomeBedSpot() {
   const b = HOME_FURNITURE_LAYOUT.bed;
-  const cx = b.x + b.w / 2, cy = b.y + b.h / 2;
-  return { x: cx, y: cy + b.h / 2 + 14, facing: 'up', lieX: cx, lieY: cy };
+  return {
+    rect: { x: b.x, y: b.y, w: b.w, h: b.h },
+    lieX: b.x + b.w / 2, lieY: b.y + b.h / 2,
+    lieAngle: b.w > b.h ? -Math.PI / 2 : 0
+  };
 }
 
 // static tables/seats (taverns, restaurants, etc), the toilet (any building
@@ -2478,7 +2567,11 @@ function update(timestamp, dt) {
         if (Math.hypot(s.x - px, s.y - py) < 26) nearbySeat = s;
       });
       getBuildingBeds(currentBuilding).forEach(bd => {
-        if (Math.hypot(bd.x - px, bd.y - py) < 26) nearbyBed = bd;
+        // distance to the nearest point on the bed's own footprint, not
+        // one fixed approach spot - lets you climb in from any side
+        const nx = Math.max(bd.rect.x, Math.min(px, bd.rect.x + bd.rect.w));
+        const ny = Math.max(bd.rect.y, Math.min(py, bd.rect.y + bd.rect.h));
+        if (Math.hypot(nx - px, ny - py) < 26) nearbyBed = bd;
       });
       getBuildingShowers(currentBuilding).forEach(s => {
         if (Math.hypot(s.x - px, s.y - py) < 26) nearbyShower = s;
@@ -2591,12 +2684,14 @@ function drawDude(cx, cy, color, label, opts) {
     // sprawled flat on open pavement - any rotation reads fine there
     ctx.rotate(Math.PI / 2);
     ctx.translate(0, 6);
+  } else if (opts.lying && opts.lieAngle) {
+    // matches whichever way the bed itself is oriented - a portrait bed
+    // (taller than wide) needs no rotation at all to fit its long axis,
+    // but a landscape one (headboard against a side wall) needs the
+    // character turned onto their side, or they'd stick out past its edges
+    ctx.rotate(opts.lieAngle);
+    ctx.translate(0, 6);
   }
-  // lying in bed deliberately does NOT rotate - every bed in the game is
-  // taller than it is wide, so a lying sprite needs to stay in its normal
-  // upright orientation to fit the bed's long axis; rotating 90 degrees
-  // (like knockedDown does) made the character stick out sideways past
-  // the edges of the bed
 
   ctx.scale(scale, scale);
 
@@ -2768,7 +2863,7 @@ function drawDude(cx, cy, color, label, opts) {
   // head position: centered and compact when crouched front/back, pushed
   // forward and down low when tucked in the side-view racing crouch
   const headX = sideRiding ? 10 : 0;
-  const headY = sideRiding ? -18 : frontRiding ? -26 : -39;
+  const headY = sideRiding ? -18 : frontRiding ? -22 : -39;
   const headR = opts.riding ? 8 : 10;
 
   const skinBase = opts.skinTone || '#f0c090';
@@ -2786,9 +2881,34 @@ function drawDude(cx, cy, color, label, opts) {
   const hairstyle = opts.hairstyle || 'square';
   if (hairstyle !== 'bald') {
     ctx.fillStyle = hairColor;
-    if (hairstyle === 'square') {
+    if (frontRiding || opts.lying) {
+      // whenever the face is deliberately hidden and we're looking at
+      // the back/top of the head instead (hunched over the handlebars,
+      // or lying in bed) - that's solid hair for every style except a
+      // mohawk, which still reads as a narrow strip with bare scalp on
+      // both sides even from directly above
+      if (hairstyle === 'mohawk') {
+        ctx.fillRect(headX - 2, headY - headR - 3, 4, headR * 1.6);
+      } else {
+        ctx.beginPath();
+        ctx.arc(headX, headY, headR - 0.5, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    } else if (hairstyle === 'square') {
       // boxy flat-top instead of a rounded cap
       ctx.fillRect(headX - headR, headY - headR - 2, headR * 2, headR * 0.9);
+    } else if (hairstyle === 'buzz') {
+      // same rounded cap shape as the default style (hugging the head's
+      // own curve, not a separate smaller dome floating above it), just
+      // faded so it reads as a thin shave instead of full-thickness hair
+      ctx.globalAlpha = 0.55;
+      ctx.beginPath();
+      ctx.arc(headX, headY - 2, headR + 0.5, Math.PI, Math.PI * 2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    } else if (hairstyle === 'mohawk') {
+      // narrow spiked strip down the center, bare scalp on both sides
+      ctx.fillRect(headX - 2, headY - headR - 3, 4, headR * 1.6);
     } else {
       ctx.beginPath();
       ctx.arc(headX, headY - 2, headR + 0.5, Math.PI, Math.PI * 2);
@@ -2809,8 +2929,10 @@ function drawDude(cx, cy, color, label, opts) {
 
   // front-riding always shows the back of the head/helmet, same as facing
   // up while standing - hunched forward over the bars reads the same way
-  // whether you're heading up or down the screen, not suddenly face-on
-  if (facing !== 'up' && !frontRiding) {
+  // whether you're heading up or down the screen, not suddenly face-on.
+  // lying is excluded outright too - whichever way a bed is oriented, you
+  // never see a face while lying in it
+  if (facing !== 'up' && !frontRiding && !opts.lying) {
     let ex = headX;
     if (frontRiding) {
       // no left/right distinction while facing the camera on the bike
@@ -2900,9 +3022,13 @@ function drawDude(cx, cy, color, label, opts) {
 
   if (opts.lying) {
     // little drifting "z"s make it read as asleep/resting rather than
-    // just standing still at the bed
+    // just standing still at the bed - offset rotates along with
+    // lieAngle so it stays over the head no matter which way the bed
+    // is oriented (60px "up" from the anchor, rotated the same amount
+    // the body itself was)
+    const lieAngle = opts.lieAngle || 0;
     ctx.save();
-    ctx.translate(cx, cy - 60);
+    ctx.translate(cx + 60 * Math.sin(lieAngle), cy - 60 * Math.cos(lieAngle));
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(255,255,255,0.85)';
@@ -4414,18 +4540,33 @@ function drawCouch(rx, ry, c) {
   ctx.stroke();
 }
 
+// pillow sits against whichever edge is the headboard - the short edge
+// for a portrait bed (head at the top), or the left edge for a landscape
+// one (headboard against a side wall), matching however wide vs tall
+// this particular bed happens to be
 function drawBed(rx, ry, b) {
+  const landscape = b.w > b.h;
   ctx.fillStyle = 'rgba(0,0,0,0.25)';
   ctx.fillRect(rx + b.x, ry + b.y + b.h, b.w, 5);
   ctx.fillStyle = '#5a4a3a'; // frame
   ctx.fillRect(rx + b.x, ry + b.y, b.w, b.h);
-  const grad = ctx.createLinearGradient(0, ry + b.y, 0, ry + b.y + b.h);
-  grad.addColorStop(0, shadeColor('#3a5a7a', 14));
-  grad.addColorStop(1, shadeColor('#3a5a7a', -14));
-  ctx.fillStyle = grad; // blanket
-  ctx.fillRect(rx + b.x + 4, ry + b.y + 22, b.w - 8, b.h - 26);
-  ctx.fillStyle = '#e8e0d0'; // pillow
-  ctx.fillRect(rx + b.x + 8, ry + b.y + 6, b.w - 16, 16);
+  if (landscape) {
+    const grad = ctx.createLinearGradient(rx + b.x, 0, rx + b.x + b.w, 0);
+    grad.addColorStop(0, shadeColor('#3a5a7a', 14));
+    grad.addColorStop(1, shadeColor('#3a5a7a', -14));
+    ctx.fillStyle = grad; // blanket
+    ctx.fillRect(rx + b.x + 22, ry + b.y + 4, b.w - 26, b.h - 8);
+    ctx.fillStyle = '#e8e0d0'; // pillow, against the headboard on the left
+    ctx.fillRect(rx + b.x + 6, ry + b.y + 8, 16, b.h - 16);
+  } else {
+    const grad = ctx.createLinearGradient(0, ry + b.y, 0, ry + b.y + b.h);
+    grad.addColorStop(0, shadeColor('#3a5a7a', 14));
+    grad.addColorStop(1, shadeColor('#3a5a7a', -14));
+    ctx.fillStyle = grad; // blanket
+    ctx.fillRect(rx + b.x + 4, ry + b.y + 22, b.w - 8, b.h - 26);
+    ctx.fillStyle = '#e8e0d0'; // pillow, against the headboard at the top
+    ctx.fillRect(rx + b.x + 8, ry + b.y + 6, b.w - 16, 16);
+  }
   ctx.strokeStyle = 'rgba(0,0,0,0.3)';
   ctx.lineWidth = 2;
   ctx.strokeRect(rx + b.x, ry + b.y, b.w, b.h);
@@ -4781,7 +4922,7 @@ function drawInterior() {
     } else if (d.type === 'displaybike') {
       drawMotorcycle(rx + d.obj.x, ry + d.obj.y, d.obj.facing, d.obj.color);
     } else {
-      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, moving: player.moving, lying: player.lying, sitting: player.sitting });
+      drawDude(rx + player.x + player.w/2, ry + player.y + player.h, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, moving: player.moving, lying: player.lying, lieAngle: player.lieAngle, sitting: player.sitting });
     }
   });
 
