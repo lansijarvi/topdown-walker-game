@@ -2582,10 +2582,16 @@ function drawDude(cx, cy, color, label, opts) {
   ctx.save();
   ctx.translate(cx, cy);
 
-  if (opts.knockedDown || opts.lying) {
+  if (opts.knockedDown) {
+    // sprawled flat on open pavement - any rotation reads fine there
     ctx.rotate(Math.PI / 2);
     ctx.translate(0, 6);
   }
+  // lying in bed deliberately does NOT rotate - every bed in the game is
+  // taller than it is wide, so a lying sprite needs to stay in its normal
+  // upright orientation to fit the bed's long axis; rotating 90 degrees
+  // (like knockedDown does) made the character stick out sideways past
+  // the edges of the bed
 
   ctx.scale(scale, scale);
 
@@ -2884,6 +2890,21 @@ function drawDude(cx, cy, color, label, opts) {
     ctx.textAlign = 'center';
     ctx.fillStyle = '#fff';
     ctx.fillText('!', 0, 0);
+    ctx.restore();
+  }
+
+  if (opts.lying) {
+    // little drifting "z"s make it read as asleep/resting rather than
+    // just standing still at the bed
+    ctx.save();
+    ctx.translate(cx, cy - 60);
+    ctx.font = 'bold 13px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    const t = performance.now() / 600;
+    ctx.fillText('z', 6 + Math.sin(t) * 2, -Math.abs(Math.sin(t)) * 6);
+    ctx.font = 'bold 16px monospace';
+    ctx.fillText('Z', 14 + Math.sin(t + 1) * 2, -6 - Math.abs(Math.sin(t + 1)) * 8);
     ctx.restore();
   }
 }
@@ -5147,9 +5168,20 @@ function loadGame() {
   try {
     const data = JSON.parse(raw);
     Object.assign(player, data.player);
-    player.sitting = false; // never resume a save mid-sit
-    player.lying = false; // never resume a save mid-lie-down
-    player.showering = false; // never resume a save mid-shower
+    // never resume a save mid-sit/lie/shower - if the autosave (every 5s)
+    // happened to catch the player in one of those states, their x/y is
+    // sitting right on top of the furniture's own solid collision rect;
+    // clearing just the flag isn't enough, or they'd load in standing but
+    // stuck inside the bed/couch/shower with no way to walk out. Snapping
+    // back to the saved restSpot (the walkable approach point) fixes both.
+    if (player.restSpot) {
+      player.x = player.restSpot.x - player.w / 2;
+      player.y = player.restSpot.y - player.h / 2;
+      player.facing = player.restSpot.facing;
+    }
+    player.sitting = false;
+    player.lying = false;
+    player.showering = false;
     player.restSpot = null;
     scene = data.scene === 'interior' ? 'interior' : 'outside';
     currentBuilding = (data.currentBuildingIndex >= 0 && buildings[data.currentBuildingIndex]) ? buildings[data.currentBuildingIndex] : null;
