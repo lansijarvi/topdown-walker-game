@@ -2916,13 +2916,24 @@ function drawDude(cx, cy, color, label, opts) {
     }
     if (!opts.riding) {
       if (hairstyle === 'bowl') {
-        // short side coverage, down past the ears
-        ctx.fillRect(headX - headR - 1, headY - 2, 4, 10);
-        ctx.fillRect(headX + headR - 3, headY - 2, 4, 10);
+        if (facing === 'up') {
+          // back turned - hair drapes across the back of the head
+          // instead of the usual face-framing side tufts, which would
+          // otherwise look identical to the front view minus the eyes
+          ctx.fillRect(headX - headR - 1, headY - 2, headR * 2 + 2, 10);
+        } else {
+          // short side coverage, down past the ears
+          ctx.fillRect(headX - headR - 1, headY - 2, 4, 10);
+          ctx.fillRect(headX + headR - 3, headY - 2, 4, 10);
+        }
       } else if (hairstyle === 'long') {
-        // longer hair framing the face down to the shoulders
-        ctx.fillRect(headX - headR - 1, headY - 2, 5, 19);
-        ctx.fillRect(headX + headR - 4, headY - 2, 5, 19);
+        if (facing === 'up') {
+          ctx.fillRect(headX - headR - 1, headY - 2, headR * 2 + 2, 19);
+        } else {
+          // longer hair framing the face down to the shoulders
+          ctx.fillRect(headX - headR - 1, headY - 2, 5, 19);
+          ctx.fillRect(headX + headR - 4, headY - 2, 5, 19);
+        }
       }
     }
   }
