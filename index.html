@@ -1461,6 +1461,11 @@ const player = {
   carBoostSpeed: 7.0
 };
 
+// a pristine snapshot of the starting player, taken before anything can
+// mutate it - New Game restores from this instead of reloading the page,
+// since some embedded preview panels don't reliably refetch on reload
+const DEFAULT_PLAYER = JSON.parse(JSON.stringify(player));
+
 let muzzleFlashUntil = 0;
 let lastShotBlockedFlashUntil = 0;
 let bullets = [];
@@ -5155,10 +5160,39 @@ function saveGame() {
   lastSaveFlashUntil = performance.now() + 1500;
 }
 
+// resets everything in memory rather than reloading the page - a couple
+// of embedded preview panels (VS Code's Live Preview among them) don't
+// reliably refetch the page on location.reload(), which made New Game
+// look like it did nothing at all
+function resetGameState() {
+  localStorage.removeItem(SAVE_KEY);
+  Object.assign(player, JSON.parse(JSON.stringify(DEFAULT_PLAYER)));
+  scene = 'outside';
+  currentBuilding = null;
+  motorcycleParked = null;
+  carParked = null;
+  dialogueOpen = false;
+  dialogueTree = null;
+  dialogueNodeKey = 'start';
+  mapOpen = false;
+  nearbyNPC = null;
+  nearbySeat = null;
+  nearbyBed = null;
+  nearbyShower = null;
+  nearbyFixture = null;
+  interactCooldownUntil = 0;
+  playerHitUntil = 0;
+  playerHitPending = false;
+  muzzleFlashUntil = 0;
+  bullets = [];
+  syncDialogueOptionsOverlay();
+  updateNameDisplay();
+  openNameOverlay('');
+}
+
 document.getElementById('newGameBtn').addEventListener('click', () => {
   if (confirm('Start a new game? This erases your current save.')) {
-    localStorage.removeItem(SAVE_KEY);
-    location.reload();
+    resetGameState();
   }
 });
 
