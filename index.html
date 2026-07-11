@@ -270,7 +270,8 @@
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M for the bike, C for the car, N for the map, X to wheelie on the bike.</span>
+  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard), N for the map, X to wheelie/jump.</span>
+  <div id="trackEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="nameDisplay"></div>
   <div id="infoButtons">
     <button class="infoBtn" id="newGameBtn">New Game</button>
@@ -1431,25 +1432,9 @@ const mountainObstacle = { x: 0, y: WORLD_TOP, w: WORLD_W, h: MOUNTAIN_Y - WORLD
 const wildernessObstacles = [mountainObstacle];
 
 // a dirt road running the full width of the world, up near the
-// mountains - Ridge Road, with a few jump ramps along it
+// mountains - Ridge Road
 const RIDGE_ROAD_Y = -3270;
 const RIDGE_ROADS = [{ name: 'Ridge Rd', y: RIDGE_ROAD_Y }];
-// a mix of small and big ramps spread along the road - size scales both
-// the visual mound and how high/long the jump off it actually is
-// kept well clear of every intersection on Ridge Road (the west/east
-// loop spurs, and where Pine St/Maple St cross up from downtown) with
-// generous runway between ramps to actually build speed for the jump
-const JUMP_RAMPS = [
-  { x: 90,   size: 0.6 },
-  { x: 680,  size: 1.1 },
-  { x: 1330, size: 1.3 },
-  { x: 1780, size: 0.8 },
-  { x: 2200, size: 2.4 },  // mega ramp - huge air
-  { x: 2900, size: 1.2 },
-  { x: 3080, size: 0.9 },  // close pair - land right off the 2900 ramp onto this one
-  { x: 3550, size: 2.5 },  // mega ramp - the biggest one on the road
-  { x: 4000, size: 0.85 }
-].map(r => ({ ...r, roadY: RIDGE_ROAD_Y }));
 
 // two loop trails peeling off each end of Ridge Road, dropping south
 // and curving back in to rejoin Pine St (west) and Maple St (east) - so
@@ -1463,19 +1448,19 @@ const LOOP_SEGMENTS = [
   { horizontal: false, x: EAST_LOOP.vx, y0: RIDGE_ROAD_Y + ROAD_W, y1: LOOP_Y + ROAD_W },
   { horizontal: true,  y: LOOP_Y, x0: EAST_LOOP.hx0, x1: EAST_LOOP.hx1 }
 ];
-// no ramp right where you'd arrive off the Pine/Maple bridge - there
-// should be a clean, empty stretch of trail before the first jump, not
-// one sitting right at the junction. The west loop's run is too short to
-// fit a ramp AND a real runway, so it's left as a plain connector; the
-// east loop has more room, so its ramps sit well past the Maple St end
-const LOOP_RAMPS = [
-  { x: 3500, size: 1.6 },
-  { x: 3900, size: 0.9 }
-].map(r => ({ ...r, roadY: LOOP_Y }));
 
-// every ramp on the map, whichever road it belongs to - the jump/lift
-// logic doesn't care which road a ramp sits on, just its own roadY band
-const ALL_RAMPS = [...JUMP_RAMPS, ...LOOP_RAMPS];
+// jump ramps - now entirely player-placed via the track editor (press
+// [T] to toggle it) rather than hand-authored. Each is just a free
+// {x, y, size} point, not tied to any particular road, and persists in
+// localStorage as you build the track out. Starts empty on a fresh save.
+let TRACK_RAMPS = [];
+try {
+  const savedRamps = localStorage.getItem('trackRamps');
+  if (savedRamps) TRACK_RAMPS = JSON.parse(savedRamps);
+} catch (e) { /* ignore a corrupt save, just start empty */ }
+function saveTrackRamps() {
+  localStorage.setItem('trackRamps', JSON.stringify(TRACK_RAMPS));
+}
 
 // a winding dirt hiking trail through the woods - purely cosmetic, no
 // collision, just a dashed path linking the trailhead near the Ranger
@@ -1887,6 +1872,102 @@ function toggleMap() {
   mapOpen = !mapOpen;
 }
 
+// --- track editor: click empty ground to drop a ramp, drag an existing
+// one to move it, scroll over one to resize it, right-click to delete -
+// everything lands in TRACK_RAMPS and autosaves to localStorage ---
+let trackEditorOpen = false;
+let draggingRampIndex = -1;
+const RAMP_PICK_RADIUS = 45;
+
+function toggleTrackEditor() {
+  if (dialogueOpen || awaitingName) return;
+  trackEditorOpen = !trackEditorOpen;
+  draggingRampIndex = -1;
+}
+
+// keeps the track editor's instructions tucked under the regular
+// gameplay controls in the top-left info box, instead of floating a
+// separate banner over the canvas
+function updateTrackEditorInfo() {
+  const el = document.getElementById('trackEditorInfo');
+  if (!el) return;
+  if (!trackEditorOpen) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = `TRACK EDITOR (${TRACK_RAMPS.length} ramps): click to add/drag a ramp, scroll to resize, right-click to delete, C to copy the layout, T to exit.`;
+}
+
+function findRampNear(wx, wy) {
+  let best = -1, bestDist = RAMP_PICK_RADIUS;
+  TRACK_RAMPS.forEach((r, i) => {
+    const d = Math.hypot(wx - r.x, wy - r.y);
+    if (d < bestDist) { bestDist = d; best = i; }
+  });
+  return best;
+}
+
+function screenToWorld(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const { camX, camY } = getCamera();
+  return {
+    x: (clientX - rect.left) * (canvas.width / rect.width) + camX,
+    y: (clientY - rect.top) * (canvas.height / rect.height) + camY
+  };
+}
+
+async function exportTrackRamps() {
+  const body = TRACK_RAMPS.map(r => `  { x: ${Math.round(r.x)}, y: ${Math.round(r.y)}, size: ${r.size.toFixed(2)} }`).join(',\n');
+  const text = `const TRACK_RAMPS = [\n${body}\n];`;
+  try {
+    await navigator.clipboard.writeText(text);
+    showFlavorMessage(`Copied ${TRACK_RAMPS.length} ramps to clipboard!`);
+  } catch (e) {
+    console.log(text);
+    showFlavorMessage('Could not copy - logged to console instead');
+  }
+}
+
+canvas.addEventListener('contextmenu', e => { if (trackEditorOpen) e.preventDefault(); });
+
+canvas.addEventListener('pointerdown', e => {
+  if (!trackEditorOpen || scene !== 'outside' || dialogueOpen) return;
+  const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+  if (e.button === 2) {
+    const idx = findRampNear(wx, wy);
+    if (idx >= 0) { TRACK_RAMPS.splice(idx, 1); saveTrackRamps(); }
+    return;
+  }
+  const idx = findRampNear(wx, wy);
+  if (idx >= 0) {
+    draggingRampIndex = idx;
+  } else {
+    TRACK_RAMPS.push({ x: wx, y: wy, size: 1.0 });
+    draggingRampIndex = TRACK_RAMPS.length - 1;
+    saveTrackRamps();
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!trackEditorOpen || draggingRampIndex < 0) return;
+  const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+  TRACK_RAMPS[draggingRampIndex].x = wx;
+  TRACK_RAMPS[draggingRampIndex].y = wy;
+});
+
+canvas.addEventListener('pointerup', () => {
+  if (draggingRampIndex >= 0) { saveTrackRamps(); draggingRampIndex = -1; }
+});
+
+canvas.addEventListener('wheel', e => {
+  if (!trackEditorOpen) return;
+  const { x: wx, y: wy } = screenToWorld(e.clientX, e.clientY);
+  const idx = findRampNear(wx, wy);
+  if (idx < 0) return;
+  e.preventDefault();
+  const r = TRACK_RAMPS[idx];
+  r.size = Math.max(0.4, Math.min(3, r.size + (e.deltaY < 0 ? 0.1 : -0.1)));
+  saveTrackRamps();
+}, { passive: false });
+
 const WHEELIE_DURATION = 900;
 const JUMP_DURATION = 750;
 const JUMP_MIN_SPEED = 2.2;
@@ -1898,8 +1979,8 @@ const JUMP_BOOST_MS = 300;
 // eases back to 0 on the far side. Applies whether or not a real jump
 // is happening, same shape the ramp itself is drawn with
 function rampGroundLift(px, py) {
-  for (const r of ALL_RAMPS) {
-    if (py < r.roadY || py > r.roadY + ROAD_W) continue;
+  for (const r of TRACK_RAMPS) {
+    if (Math.abs(py - r.y) > ROAD_W / 2) continue;
     const halfLen = 70 * r.size;
     const plateauHalf = halfLen * 0.4;
     const dx = Math.abs(px - r.x);
@@ -1919,7 +2000,7 @@ function tryRampJump(timestamp) {
   if (!player.onMotorcycle || timestamp < player.jumpCooldownUntil) return false;
   if ((player.rideSpeed || 0) < JUMP_MIN_SPEED) return false;
   const px = player.x + player.w / 2, py = player.y + player.h / 2;
-  const ramp = ALL_RAMPS.find(r => Math.abs(px - r.x) < 60 * r.size && py > r.roadY && py < r.roadY + ROAD_W);
+  const ramp = TRACK_RAMPS.find(r => Math.abs(px - r.x) < 60 * r.size && Math.abs(py - r.y) < ROAD_W / 2);
   if (!ramp) return false;
   const duration = JUMP_DURATION * (0.75 + ramp.size * 0.35);
   player.jumpUntil = timestamp + duration;
@@ -2100,6 +2181,8 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'm' && !e.repeat) toggleVehicle();
   if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
   if (e.key.toLowerCase() === 'x' && !e.repeat) tryJumpOrWheelie();
+  if (e.key.toLowerCase() === 't' && !e.repeat) toggleTrackEditor();
+  if (e.key.toLowerCase() === 'c' && !e.repeat && trackEditorOpen) exportTrackRamps();
 });
 
 window.addEventListener('keydown', e => {
@@ -4314,8 +4397,7 @@ function drawRampMound(rx, top, r) {
   });
 }
 
-// a dirt road running the full width of the world up near the mountains,
-// with a few raised jump ramps built into it
+// a dirt road running the full width of the world up near the mountains
 function drawRidgeRoad(camX, camY) {
   const top = RIDGE_ROAD_Y - camY;
   if (top > canvas.height || top + ROAD_W < 0) return;
@@ -4330,15 +4412,10 @@ function drawRidgeRoad(camX, camY) {
     ctx.fillStyle = `rgba(60,45,28,${0.15 + n * 0.15})`;
     ctx.fillRect(sx, top + 10 + n * (ROAD_W - 60), 18, 40);
   }
-
-  JUMP_RAMPS.forEach(r => {
-    drawRampMound(r.x - camX, top, r);
-  });
 }
 
 // the two loop trails - a vertical spur dropping off each end of Ridge
-// Road, then a horizontal run back in to rejoin Pine St or Maple St,
-// each with their own jump ramps along the horizontal stretch
+// Road, then a horizontal run back in to rejoin Pine St or Maple St
 function drawLoopTrails(camX, camY) {
   LOOP_SEGMENTS.forEach(seg => {
     if (seg.horizontal) {
@@ -4371,9 +4448,20 @@ function drawLoopTrails(camX, camY) {
       }
     }
   });
+}
 
-  LOOP_RAMPS.forEach(r => {
-    drawRampMound(r.x - camX, LOOP_Y - camY, r);
+// every ramp the player has placed with the track editor, wherever it is
+function drawTrackRamps(camX, camY) {
+  TRACK_RAMPS.forEach((r, i) => {
+    drawRampMound(r.x - camX, r.y - ROAD_W / 2 - camY, r);
+    if (trackEditorOpen) {
+      ctx.save();
+      ctx.strokeStyle = i === draggingRampIndex ? 'rgba(255,255,0,0.9)' : 'rgba(255,255,255,0.6)';
+      ctx.lineWidth = 2;
+      ctx.setLineDash([4, 4]);
+      ctx.strokeRect(r.x - camX - 70 * r.size, r.y - camY - ROAD_W / 2, 140 * r.size, ROAD_W);
+      ctx.restore();
+    }
   });
 }
 
@@ -5031,11 +5119,18 @@ function drawStreetLamp(x, y, camX, camY, nightFactor) {
   }
 }
 
-function drawOutside() {
+// the camera's top-left world position for the current frame - shared
+// by the renderer and the track editor's mouse-to-world conversion
+function getCamera() {
   let camX = player.x + player.w / 2 - canvas.width / 2;
   let camY = player.y + player.h / 2 - canvas.height / 2;
   camX = Math.max(0, Math.min(WORLD_W - canvas.width, camX));
   camY = Math.max(WORLD_TOP, Math.min(WORLD_H - canvas.height, camY));
+  return { camX, camY };
+}
+
+function drawOutside() {
+  const { camX, camY } = getCamera();
   const nightFactor = getNightFactor(performance.now());
 
   // ground color banding by latitude, north to south - bare rocky ground
@@ -5097,6 +5192,7 @@ function drawOutside() {
   drawDock(camX, camY);
   drawRidgeRoad(camX, camY);
   drawLoopTrails(camX, camY);
+  drawTrackRamps(camX, camY);
   drawMountainWall(camX, camY);
 
   const currentPhase = getLightPhase(performance.now());
@@ -6008,6 +6104,8 @@ function drawHUD() {
     ctx.fillStyle = flashEmpty ? '#ff6b6b' : (player.ammoInMag === 0 ? '#ff9f7f' : '#ffd27f');
     ctx.fillText(ammoText, canvas.width - 20, 63);
   }
+
+  updateTrackEditorInfo();
 
   if (dialogueOpen) return;
 
