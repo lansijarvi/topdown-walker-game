@@ -306,8 +306,7 @@
 <div id="actionButtons">
   <button class="touchBtn" id="talkBtn">TALK<br>(E)</button>
   <button class="touchBtn" id="gunBtn">GUN<br>(G)</button>
-  <button class="touchBtn" id="motoBtn">BIKE<br>(M)</button>
-  <button class="touchBtn" id="carBtn">CAR<br>(C)</button>
+  <button class="touchBtn" id="motoBtn">RIDE<br>(M)</button>
   <button class="touchBtn" id="mapBtn">MAP<br>(N)</button>
 </div>
 
@@ -569,7 +568,15 @@ function stopEngine() {
 }
 
 const WORLD_W = 4600;
+// downtown's own vertical extent, unchanged from before the wilderness
+// was added - named-street paving, traffic, lamps, and wear/labels all
+// stay capped here so none of that city furniture spills north into the
+// woods (the wilderness lives at y < 0, entirely outside this span)
 const WORLD_H = 4500;
+const DOWNTOWN_H = WORLD_H;
+// the world's northern edge, out past the mountains - negative because
+// downtown itself still starts at y = 0, exactly as it always has
+const WORLD_TOP = -3700;
 const ROOM_W = 500;
 const ROOM_H = 380;
 const WALL_THICK = 24;
@@ -1346,7 +1353,15 @@ const buildings = [
     {name:'Bouncer Duke', color:'#1a1a1a', gender: 'm', hairstyle: 'bald', big: true, dirty: true},
     {name:'Dancer Ruby', color:'#c25f5f', bikini: true, bikiniColor: '#c25f5f'},
     {name:'Bartender Moe', color:'#332a20', dirty: true}
-  ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }}
+  ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }},
+
+  // --- further out still, past the second river - a handful of rustic
+  // cabins scattered through the woods, reachable via the Pine/Maple
+  // dirt-road bridges ---
+  {x: 700,  y: -580,  w: 160, h: 90, wallH: 70, roof: '#5a3a24', wall: '#3f2a1a', name: 'Ranger Station', floor: '#4a3a28', npcs: [{name:'Ranger Rick', color:'#4a6a3a'}]},
+  {x: 700,  y: -2750, w: 140, h: 90, wallH: 60, roof: '#4a3320', wall: '#332318', name: 'Hunting Cabin', floor: '#3a2e20', npcs: [{name:'Trapper Tess', color:'#5a4a30'}]},
+  {x: 2800, y: -2100, w: 150, h: 90, wallH: 60, roof: '#4a3320', wall: '#332318', name: 'Fishing Cabin', floor: '#3a2e20', npcs: [{name:'Fisherman Fred', color:'#3a5a70'}]},
+  {x: 2000, y: -2850, w: 170, h: 90, wallH: 80, roof: '#4a453f', wall: '#332f28', name: 'Lookout Cabin', floor: '#3a3a34', npcs: [{name:'Lookout Lyle', color:'#5a5a52'}]}
 ];
 
 buildings.forEach(b => b.npcs.forEach(n => {
@@ -1386,6 +1401,145 @@ const riverObstacles = freeSegments(
   WORLD_W,
   NAMED_STREETS.filter(s => s.bridge).map(s => ({ start: s.x - SIDEWALK_W - 6, end: s.x + ROAD_W + SIDEWALK_W + 6 }))
 ).map(seg => ({ x: seg.start, y: RIVER_Y, w: seg.end - seg.start, h: RIVER_H }));
+
+// --- the wilds north of downtown: a second river, then pine forest, a
+// lake, a few rustic cabins, and mountains beyond. Pine St and Maple St -
+// the same two streets that already bridge the first river to reach the
+// seedy south side - are the roads that keep going the other way too,
+// turning to dirt once they're past the city limits to the north ---
+const NORTH_ROADS = NAMED_STREETS.filter(s => s.name === 'Pine St' || s.name === 'Maple St');
+const RIVER2_Y = -320;
+const RIVER2_H = 220;
+const FOREST_Y = RIVER2_Y;              // forest's near (downtown-facing) edge
+const MOUNTAIN_Y = WORLD_TOP + 400;     // forest's far edge / near edge of the mountain wall
+const FOREST_DEPTH = FOREST_Y - MOUNTAIN_Y; // always positive - forest spans [MOUNTAIN_Y, FOREST_Y]
+const LAKE = { x: 1150, y: -2650, w: 1300, h: 1000 };
+
+// a wooden dock on the lake's south shore, sticking out into the water -
+// the boat is moored at its far end
+const LAKE_DOCK = { x: 1890, y: LAKE.y + LAKE.h - 240, w: 50, h: 270 };
+
+const river2Obstacles = freeSegments(
+  WORLD_W,
+  NORTH_ROADS.map(s => ({ start: s.x - SIDEWALK_W - 6, end: s.x + ROAD_W + SIDEWALK_W + 6 }))
+).map(seg => ({ x: seg.start, y: RIVER2_Y, w: seg.end - seg.start, h: RIVER2_H }));
+
+const lakeObstacle = { x: LAKE.x, y: LAKE.y, w: LAKE.w, h: LAKE.h };
+const mountainObstacle = { x: 0, y: WORLD_TOP, w: WORLD_W, h: MOUNTAIN_Y - WORLD_TOP };
+// lakeObstacle is handled separately in tryMoveOutside (it only blocks
+// vehicles, not feet or the boat) - the mountain wall blocks everyone
+const wildernessObstacles = [mountainObstacle];
+
+// a dirt road running the full width of the world, up near the
+// mountains - Ridge Road, with a few jump ramps along it
+const RIDGE_ROAD_Y = -3270;
+const RIDGE_ROADS = [{ name: 'Ridge Rd', y: RIDGE_ROAD_Y }];
+// a mix of small and big ramps spread along the road - size scales both
+// the visual mound and how high/long the jump off it actually is
+// kept well clear of every intersection on Ridge Road (the west/east
+// loop spurs, and where Pine St/Maple St cross up from downtown) with
+// generous runway between ramps to actually build speed for the jump
+const JUMP_RAMPS = [
+  { x: 90,   size: 0.6 },
+  { x: 680,  size: 1.1 },
+  { x: 1330, size: 1.3 },
+  { x: 1780, size: 0.8 },
+  { x: 2200, size: 2.4 },  // mega ramp - huge air
+  { x: 2900, size: 1.2 },
+  { x: 3080, size: 0.9 },  // close pair - land right off the 2900 ramp onto this one
+  { x: 3550, size: 2.5 },  // mega ramp - the biggest one on the road
+  { x: 4000, size: 0.85 }
+].map(r => ({ ...r, roadY: RIDGE_ROAD_Y }));
+
+// two loop trails peeling off each end of Ridge Road, dropping south
+// and curving back in to rejoin Pine St (west) and Maple St (east) - so
+// there's a way back down to the main road from either end of the ridge
+const LOOP_Y = -800;
+const WEST_LOOP = { vx: 300, hx0: 300, hx1: 940 };
+const EAST_LOOP = { vx: 4300, hx0: 2520, hx1: 4300 };
+const LOOP_SEGMENTS = [
+  { horizontal: false, x: WEST_LOOP.vx, y0: RIDGE_ROAD_Y + ROAD_W, y1: LOOP_Y + ROAD_W },
+  { horizontal: true,  y: LOOP_Y, x0: WEST_LOOP.hx0, x1: WEST_LOOP.hx1 },
+  { horizontal: false, x: EAST_LOOP.vx, y0: RIDGE_ROAD_Y + ROAD_W, y1: LOOP_Y + ROAD_W },
+  { horizontal: true,  y: LOOP_Y, x0: EAST_LOOP.hx0, x1: EAST_LOOP.hx1 }
+];
+// no ramp right where you'd arrive off the Pine/Maple bridge - there
+// should be a clean, empty stretch of trail before the first jump, not
+// one sitting right at the junction. The west loop's run is too short to
+// fit a ramp AND a real runway, so it's left as a plain connector; the
+// east loop has more room, so its ramps sit well past the Maple St end
+const LOOP_RAMPS = [
+  { x: 3500, size: 1.6 },
+  { x: 3900, size: 0.9 }
+].map(r => ({ ...r, roadY: LOOP_Y }));
+
+// every ramp on the map, whichever road it belongs to - the jump/lift
+// logic doesn't care which road a ramp sits on, just its own roadY band
+const ALL_RAMPS = [...JUMP_RAMPS, ...LOOP_RAMPS];
+
+// a winding dirt hiking trail through the woods - purely cosmetic, no
+// collision, just a dashed path linking the trailhead near the Ranger
+// Station to the lake and up toward the Lookout Cabin - routed around
+// the lake's west and north shore rather than across it. Declared before
+// FOREST_TREES below so the tree scatter can keep clear of it too
+const HIKING_TRAIL = [
+  { x: 700, y: -580 }, { x: 750, y: -1000 }, { x: 700, y: -1800 },
+  { x: 750, y: -2700 }, { x: 1000, y: -3150 }, { x: 1600, y: -3200 },
+  { x: 2000, y: -3180 }
+];
+
+// pine forest, scattered procedurally rather than hand-placed - skips
+// the dirt roads, the lake, the hiking trail, and a margin around each
+// so nothing spawns inside another obstacle or right on top of a path
+const FOREST_TREES = [];
+{
+  const keepOutZones = [
+    ...NORTH_ROADS.map(s => ({ x: s.x - 40, y: MOUNTAIN_Y, w: ROAD_W + 80, h: FOREST_DEPTH })),
+    { x: 0, y: RIDGE_ROAD_Y - 20, w: WORLD_W, h: ROAD_W + 40 },
+    ...LOOP_SEGMENTS.map(s => s.horizontal
+      ? { x: s.x0 - 40, y: s.y - 40, w: (s.x1 - s.x0) + 80, h: ROAD_W + 80 }
+      : { x: s.x - 40, y: Math.min(s.y0, s.y1) - 40, w: ROAD_W + 80, h: Math.abs(s.y1 - s.y0) + 80 }),
+    { x: LAKE.x - 50, y: LAKE.y - 50, w: LAKE.w + 100, h: LAKE.h + 100 },
+    { x: 660,  y: -620,  w: 240, h: 240 },  // Ranger Station
+    { x: 660,  y: -2790, w: 220, h: 230 },  // Hunting Cabin
+    { x: 2760, y: -2140, w: 230, h: 230 },  // Fishing Cabin
+    { x: 1960, y: -2890, w: 250, h: 250 }   // Lookout Cabin
+  ];
+  const TRAIL_TREE_MARGIN = 45;
+  let attempts = 0;
+  while (FOREST_TREES.length < 90 && attempts < 1200) {
+    attempts++;
+    const x = 60 + Math.random() * (WORLD_W - 120);
+    const y = MOUNTAIN_Y + 60 + Math.random() * (FOREST_DEPTH - 160);
+    if (keepOutZones.some(z => x > z.x && x < z.x + z.w && y > z.y && y < z.y + z.h)) continue;
+    let nearTrail = false;
+    for (let i = 0; i < HIKING_TRAIL.length - 1; i++) {
+      const a = HIKING_TRAIL[i], b = HIKING_TRAIL[i + 1];
+      if (pointToSegmentDist(x, y, a.x, a.y, b.x, b.y) < TRAIL_TREE_MARGIN) { nearTrail = true; break; }
+    }
+    if (nearTrail) continue;
+    FOREST_TREES.push({ x, y, pine: true, scale: 0.9 + Math.random() * 0.6 });
+  }
+}
+const forestTreeObstacles = FOREST_TREES.map(t => {
+  const r = 7 * t.scale;
+  return { x: t.x - r, y: t.y - r, w: r * 2, h: r * 2 };
+});
+
+// short sandy spurs off the shore leading down into the water - now
+// extended well past the shoreline so it reads as walking into deep
+// water rather than just dipping a toe in
+const LAKE_PATHS = [
+  [{ x: 780, y: -2700 }, { x: 950, y: -2680 }, { x: 1150, y: -2600 }, { x: 1400, y: -2500 }],
+  [{ x: 2780, y: -2100 }, { x: 2600, y: -2150 }, { x: 2450, y: -2200 }, { x: 2150, y: -2250 }]
+];
+
+// a couple of NPCs who just live in the lake, wandering/swimming inside
+// its bounds - simpler than routing existing citizens across the bridge
+const lakeSwimmers = [
+  { name: 'Swimmer Sasha', x: LAKE.x + 400, y: LAKE.y + 300, targetX: LAKE.x + 400, targetY: LAKE.y + 300, nextDecision: 0, speed: 0.5, color: '#c25f8f' },
+  { name: 'Swimmer Theo',  x: LAKE.x + 800, y: LAKE.y + 600, targetX: LAKE.x + 800, targetY: LAKE.y + 600, nextDecision: 0, speed: 0.45, color: '#5f8fc2' }
+].map(w => ({ ...w, ...randomPersonStyle(), knockedDownUntil: 0 }));
 
 const citizens = [
   { name: 'Jogger Jamie',      homeX: 200,  homeY: 390, x: 200,  y: 390, color: '#c2905f' },
@@ -1517,6 +1671,11 @@ const player = {
   hasMotorcycle: false,
   onMotorcycle: false,
   wheelieUntil: 0,
+  jumpUntil: 0,
+  jumpCooldownUntil: 0,
+  jumpTotalMs: 0,
+  jumpBoosted: false,
+  jumpHeightMult: 1,
   sitting: false,
   lying: false,
   lieAngle: 0,
@@ -1532,7 +1691,11 @@ const player = {
   carColor: '#8f2e2e',
   pendingCarColor: '#8f2e2e',
   carSpeed: 4.4,
-  carBoostSpeed: 7.0
+  carBoostSpeed: 7.0,
+  onBoat: false,
+  boatColor: '#2a8f9a',
+  boatSpeed: 2.2,
+  swimming: false
 };
 
 // a pristine snapshot of the starting player, taken before anything can
@@ -1610,6 +1773,13 @@ let lastFrameTime = 0;
 let motorcycleParked = null; // { x, y, facing } when the bike exists in the world, null while being ridden or before purchase
 const MOUNT_RADIUS = 40;
 let carParked = null; // same idea as motorcycleParked, for the car
+// a paddleboard moored at the end of the lake's dock - free to use, no
+// purchase needed, so it exists in the world from the very start rather
+// than starting null like the motorcycle/car (which wait on a showroom buy)
+// moored in the open water right alongside the dock, not at its tip -
+// easy to step onto from the planks without the dock itself being "lake"
+const BOAT_SPOT = { x: LAKE_DOCK.x + LAKE_DOCK.w + 70, y: LAKE_DOCK.y + 60, facing: 'right' };
+let boatParked = { ...BOAT_SPOT };
 let playerHitUntil = 0;    // while set, the player is sprawled on the pavement
 let playerHitPending = false; // waiting to wake up in the hospital
 const HIT_COST = 50;       // hospital bill for getting run over
@@ -1629,7 +1799,7 @@ function toggleGunEquip() {
 }
 
 function toggleMotorcycle() {
-  if (dialogueOpen || !player.hasMotorcycle || scene !== 'outside' || player.onCar) return;
+  if (dialogueOpen || !player.hasMotorcycle || scene !== 'outside' || player.onCar || player.onBoat || player.swimming) return;
   if (player.onMotorcycle) {
     player.onMotorcycle = false;
     motorcycleParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.motoColor };
@@ -1648,7 +1818,7 @@ function toggleMotorcycle() {
 }
 
 function toggleCar() {
-  if (dialogueOpen || !player.hasCar || scene !== 'outside' || player.onMotorcycle) return;
+  if (dialogueOpen || !player.hasCar || scene !== 'outside' || player.onMotorcycle || player.onBoat || player.swimming) return;
   if (player.onCar) {
     player.onCar = false;
     carParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing, color: player.carColor };
@@ -1666,15 +1836,128 @@ function toggleCar() {
   }
 }
 
+// the paddleboard - free to hop on near the dock, but it can't leave the
+// water (enforced in tryMoveOutside), so there's no dismount-anywhere
+// risk of it ending up beached in the woods
+function toggleBoat() {
+  if (dialogueOpen || scene !== 'outside' || player.onMotorcycle || player.onCar) return;
+  if (player.onBoat) {
+    player.onBoat = false;
+    boatParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing };
+  } else if (boatParked) {
+    const dist = Math.hypot(
+      (player.x + player.w / 2) - boatParked.x,
+      (player.y + player.h / 2) - boatParked.y
+    );
+    if (dist < MOUNT_RADIUS) {
+      player.onBoat = true;
+      // snap onto the board's actual water position rather than staying
+      // wherever the player happened to be standing (e.g. still on the
+      // dock, which counts as dry land) - otherwise the board immediately
+      // gets stuck, since it can't move anywhere that isn't in the lake
+      player.x = boatParked.x - player.w / 2;
+      player.y = boatParked.y - player.h / 2;
+      player.facing = boatParked.facing;
+      boatParked = null;
+    }
+  }
+}
+
+// one unified mount/dismount button for every vehicle - car, motorcycle,
+// or paddleboard. Dismounts whichever one you're currently on; otherwise
+// mounts the nearest parked vehicle that's actually in range
+function toggleVehicle() {
+  if (dialogueOpen || scene !== 'outside') return;
+  if (player.onCar) return toggleCar();
+  if (player.onMotorcycle) return toggleMotorcycle();
+  if (player.onBoat) return toggleBoat();
+
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  const candidates = [];
+  if (player.hasCar && carParked) candidates.push({ fn: toggleCar, dist: Math.hypot(px - carParked.x, py - carParked.y) });
+  if (player.hasMotorcycle && motorcycleParked) candidates.push({ fn: toggleMotorcycle, dist: Math.hypot(px - motorcycleParked.x, py - motorcycleParked.y) });
+  if (boatParked) candidates.push({ fn: toggleBoat, dist: Math.hypot(px - boatParked.x, py - boatParked.y) });
+
+  candidates.sort((a, b) => a.dist - b.dist);
+  if (candidates.length && candidates[0].dist < MOUNT_RADIUS) candidates[0].fn();
+}
+
 function toggleMap() {
   if (dialogueOpen || awaitingName) return;
   mapOpen = !mapOpen;
 }
 
 const WHEELIE_DURATION = 900;
+const JUMP_DURATION = 750;
+const JUMP_MIN_SPEED = 2.2;
+const JUMP_BOOST_MS = 300;
+
+// how "high up" the bike's own terrain-following bump should sit while
+// riding across a ramp, purely from position - climbs from 0 to 1 (scaled
+// by that ramp's size) across the up-slope, holds at the plateau, and
+// eases back to 0 on the far side. Applies whether or not a real jump
+// is happening, same shape the ramp itself is drawn with
+function rampGroundLift(px, py) {
+  for (const r of ALL_RAMPS) {
+    if (py < r.roadY || py > r.roadY + ROAD_W) continue;
+    const halfLen = 70 * r.size;
+    const plateauHalf = halfLen * 0.4;
+    const dx = Math.abs(px - r.x);
+    if (dx > halfLen) continue;
+    const t = dx <= plateauHalf ? 1 : 1 - (dx - plateauHalf) / (halfLen - plateauHalf);
+    return t * r.size;
+  }
+  return 0;
+}
+
+// hitting a Ridge Road ramp at speed and pulling the wheelie button -
+// a fun, purely visual hop (no collision changes), with a short cooldown
+// so sitting on top of a ramp doesn't retrigger it every frame. Returns
+// true if a jump actually started, so tryJumpOrWheelie() knows not to
+// also do a plain wheelie on top of it
+function tryRampJump(timestamp) {
+  if (!player.onMotorcycle || timestamp < player.jumpCooldownUntil) return false;
+  if ((player.rideSpeed || 0) < JUMP_MIN_SPEED) return false;
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  const ramp = ALL_RAMPS.find(r => Math.abs(px - r.x) < 60 * r.size && py > r.roadY && py < r.roadY + ROAD_W);
+  if (!ramp) return false;
+  const duration = JUMP_DURATION * (0.75 + ramp.size * 0.35);
+  player.jumpUntil = timestamp + duration;
+  player.jumpTotalMs = duration;
+  player.jumpCooldownUntil = timestamp + duration + 1500;
+  player.jumpBoosted = false;
+  player.jumpHeightMult = ramp.size;
+  showFlavorMessage(ramp.size >= 2 ? 'HUGE AIR!!!' : ramp.size >= 1.3 ? 'BIG AIR!' : ramp.size <= 0.85 ? 'Little hop!' : 'Big air!');
+  return true;
+}
+
+// plain wheelie - also what popping into a boost auto-triggers, so
+// kicking into a run doesn't accidentally launch a ramp jump on its own
 function tryWheelie() {
   if (!player.onMotorcycle || dialogueOpen) return;
   player.wheelieUntil = performance.now() + WHEELIE_DURATION;
+}
+
+// the WHEELIE button/key does double duty, but only when actually
+// pressed (not from the auto-wheelie-on-boost above): hit a ramp at
+// speed and it triggers a jump instead of a plain wheelie; pull it again
+// while already airborne and it's a one-time Excite Bike-style boost -
+// a bit more height and hang time, rewarding a well-timed second pull
+function tryJumpOrWheelie() {
+  if (!player.onMotorcycle || dialogueOpen) return;
+  const now = performance.now();
+  if (now < player.jumpUntil) {
+    if (!player.jumpBoosted) {
+      player.jumpBoosted = true;
+      player.jumpUntil += JUMP_BOOST_MS;
+      player.jumpTotalMs += JUMP_BOOST_MS;
+      player.jumpHeightMult = 1.4;
+      showFlavorMessage('Nice!');
+    }
+    return;
+  }
+  if (tryRampJump(now)) return;
+  tryWheelie();
 }
 
 // standing/getting up/stepping out needs to put the player back at the
@@ -1812,10 +2095,11 @@ window.addEventListener('keydown', e => {
     shoot();
   }
   if (e.key.toLowerCase() === 'r') reload();
-  if (e.key.toLowerCase() === 'm' && !e.repeat) toggleMotorcycle();
-  if (e.key.toLowerCase() === 'c' && !e.repeat) toggleCar();
+  // one button for every vehicle - car, motorcycle, paddleboard - mounts
+  // or dismounts whichever one applies
+  if (e.key.toLowerCase() === 'm' && !e.repeat) toggleVehicle();
   if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
-  if (e.key.toLowerCase() === 'x' && !e.repeat) tryWheelie();
+  if (e.key.toLowerCase() === 'x' && !e.repeat) tryJumpOrWheelie();
 });
 
 window.addEventListener('keydown', e => {
@@ -1848,6 +2132,19 @@ function rectsOverlap(a, b) {
          a.x + a.w > b.x &&
          a.y < b.y + b.h &&
          a.y + a.h > b.y;
+}
+
+// the lake is drawn as an ellipse inscribed in LAKE's bounding box, so
+// "is this point in the lake" has to check the ellipse, not the box -
+// otherwise the box's corners (well outside the visible water) count as
+// lake too, and characters there look like they're swimming on dry land
+function inLake(x, y) {
+  // the dock is dry wood sitting over the water - standing on it should
+  // never count as swimming even though it physically overlaps the lake
+  if (x >= LAKE_DOCK.x && x <= LAKE_DOCK.x + LAKE_DOCK.w && y >= LAKE_DOCK.y && y <= LAKE_DOCK.y + LAKE_DOCK.h) return false;
+  const cx = LAKE.x + LAKE.w / 2, cy = LAKE.y + LAKE.h / 2;
+  const nx = (x - cx) / (LAKE.w / 2), ny = (y - cy) / (LAKE.h / 2);
+  return nx * nx + ny * ny <= 1;
 }
 
 // rounded-rect + drop-shadow HUD panel, reused everywhere the game used to
@@ -1939,7 +2236,11 @@ function exitBuilding() {
 
 function isPaved(x, y) {
   return NUMBERED_STREETS.some(s => y >= s.y - SIDEWALK_W && y <= s.y + ROAD_W + SIDEWALK_W) ||
-         NAMED_STREETS.some(s => x >= s.x - SIDEWALK_W && x <= s.x + ROAD_W + SIDEWALK_W);
+         NAMED_STREETS.some(s => x >= s.x - SIDEWALK_W && x <= s.x + ROAD_W + SIDEWALK_W) ||
+         RIDGE_ROADS.some(s => y >= s.y - SIDEWALK_W && y <= s.y + ROAD_W + SIDEWALK_W) ||
+         LOOP_SEGMENTS.some(s => s.horizontal
+           ? (y >= s.y - SIDEWALK_W && y <= s.y + ROAD_W + SIDEWALK_W && x >= s.x0 - SIDEWALK_W && x <= s.x1 + SIDEWALK_W)
+           : (x >= s.x - SIDEWALK_W && x <= s.x + ROAD_W + SIDEWALK_W && y >= Math.min(s.y0, s.y1) - SIDEWALK_W && y <= Math.max(s.y0, s.y1) + SIDEWALK_W));
 }
 
 function rectOnPavement(rect) {
@@ -1955,17 +2256,19 @@ function tryMoveOutside(dx, dy) {
   let blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
+  if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.x = next.x;
 
   next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
-  next.y = Math.max(0, Math.min(WORLD_H - player.h, next.y));
+  next.y = Math.max(WORLD_TOP, Math.min(WORLD_H - player.h, next.y));
   blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && !rectOnPavement(next)) blocked = true;
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
+  if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.y = next.y;
 }
 
@@ -2183,7 +2486,7 @@ function applyImpact(entity, dirX, dirY, force) {
 function applyKnockbackDecay(entity, dt, blocked) {
   if (!entity.kbVX && !entity.kbVY) return;
   const nx = Math.max(0, Math.min(WORLD_W, entity.x + entity.kbVX * dt));
-  const ny = Math.max(0, Math.min(WORLD_H, entity.y + entity.kbVY * dt));
+  const ny = Math.max(WORLD_TOP, Math.min(WORLD_H, entity.y + entity.kbVY * dt));
   if (!blocked || !blocked(nx, entity.y)) entity.x = nx;
   if (!blocked || !blocked(entity.x, ny)) entity.y = ny;
   const decay = Math.pow(KNOCKBACK_FRICTION, dt);
@@ -2289,6 +2592,16 @@ function update(timestamp, dt) {
       applyImpact(hit, b.vx, b.vy, 3.4);
       return false;
     });
+    bullets = bullets.filter(b => {
+      if (b.scene !== 'outside') return true;
+      const hit = lakeSwimmers.find(w => {
+        if (w.knockedDownUntil && performance.now() < w.knockedDownUntil) return false;
+        return pointToSegmentDist(w.x, w.y - 20, b.prevX, b.prevY - 20, b.x, b.y - 20) < HIT_RADIUS;
+      });
+      if (!hit) return true;
+      applyImpact(hit, b.vx, b.vy, 3.4);
+      return false;
+    });
   } else if (scene === 'interior') {
     resolveBulletHits(currentBuilding.npcs, 'interior');
   }
@@ -2298,9 +2611,11 @@ function update(timestamp, dt) {
     px > PARK_POND.x - 12 && px < PARK_POND.x + PARK_POND.w + 12 &&
     py > PARK_POND.y - 12 && py < PARK_POND.y + PARK_POND.h + 12
   ));
+  lakeSwimmers.forEach(w => applyKnockbackDecay(w, dt));
   if (scene === 'interior' && currentBuilding) currentBuilding.npcs.forEach(n => applyKnockbackDecay(n, dt));
 
   citizens.forEach(c => { if (c.knockedDownUntil && timestamp > c.knockedDownUntil && !c.recovered) { c.recovered = true; c.nextDecision = 0; } });
+  lakeSwimmers.forEach(w => { if (w.knockedDownUntil && timestamp > w.knockedDownUntil && !w.recovered) { w.recovered = true; w.nextDecision = 0; } });
   parkWalkers.forEach(w => { if (w.knockedDownUntil && timestamp > w.knockedDownUntil && !w.recovered) { w.recovered = true; w.nextDecision = 0; } });
   buildings.forEach(b => b.npcs.forEach(n => { if (n.knockedDownUntil && timestamp > n.knockedDownUntil && !n.recovered) { n.recovered = true; n.nextDecision = 0; } }));
 
@@ -2318,7 +2633,12 @@ function update(timestamp, dt) {
     else player.facing = dy > 0 ? 'down' : 'up';
   }
 
-  if (player.moving && !player.onCar && !player.onMotorcycle && timestamp > (player.nextFootstepAt || 0)) {
+  // in the lake, on foot, and not already in some other vehicle - swimming
+  // slows you down and is the one case where the lake doesn't block movement
+  player.swimming = scene === 'outside' && !player.onMotorcycle && !player.onCar && !player.onBoat &&
+    inLake(player.x + player.w / 2, player.y + player.h / 2);
+
+  if (player.moving && !player.onCar && !player.onMotorcycle && !player.onBoat && timestamp > (player.nextFootstepAt || 0)) {
     playFootstep();
     player.nextFootstepAt = timestamp + (keys['shift'] ? 220 : 340);
   }
@@ -2327,11 +2647,15 @@ function update(timestamp, dt) {
     ? (keys['shift'] ? player.carBoostSpeed : player.carSpeed)
     : player.onMotorcycle
     ? (keys['shift'] ? player.motoBoostSpeed : player.motoSpeed)
+    : player.onBoat
+    ? player.boatSpeed
+    : player.swimming
+    ? player.speed * 0.55
     : (keys['shift'] ? player.runSpeed : player.speed);
 
-  // vehicles build up to speed rather than snapping straight to it - walking
-  // and running on foot stay instant, only the car and bike get this ramp
-  if (player.onCar || player.onMotorcycle) {
+  // vehicles build up to speed rather than snapping straight to it - walking,
+  // swimming, and running on foot stay instant, only the car/bike/boat ramp
+  if (player.onCar || player.onMotorcycle || player.onBoat) {
     if (dx !== 0 || dy !== 0) {
       player.rideSpeed = (player.rideSpeed || 0) + (moveSpeed - (player.rideSpeed || 0)) * 0.05 * dt;
     } else {
@@ -2340,7 +2664,7 @@ function update(timestamp, dt) {
   } else {
     player.rideSpeed = 0;
   }
-  const appliedSpeed = (player.onCar || player.onMotorcycle) ? player.rideSpeed : moveSpeed;
+  const appliedSpeed = (player.onCar || player.onMotorcycle || player.onBoat) ? player.rideSpeed : moveSpeed;
 
   if (player.onCar || player.onMotorcycle) {
     const maxSpeed = player.onCar ? player.carBoostSpeed : player.motoBoostSpeed;
@@ -2474,6 +2798,36 @@ function update(timestamp, dt) {
 
         const ny = w.y + stepY;
         if (!pondBlocks(w.x, ny)) w.y = ny;
+      }
+    });
+
+    // lake swimmers - wander freely within the lake's bounds, same
+    // decision-timer pattern as the park walkers, just with nowhere to
+    // avoid since the whole wander area is the water
+    lakeSwimmers.forEach(w => {
+      if (w.knockedDownUntil && timestamp < w.knockedDownUntil) return;
+
+      const dist = Math.hypot(w.x - ppx, w.y - ppy);
+      const isNear = dist < 42;
+      if (isNear) { nearbyNPC = w; return; }
+
+      if (timestamp > w.nextDecision) {
+        // rejection-sample within the lake's ellipse (not just its
+        // bounding box) so swimmers never target a "dry corner" spot
+        let tx, ty;
+        do {
+          tx = LAKE.x + 60 + Math.random() * (LAKE.w - 120);
+          ty = LAKE.y + 60 + Math.random() * (LAKE.h - 120);
+        } while (!inLake(tx, ty));
+        w.targetX = tx;
+        w.targetY = ty;
+        w.nextDecision = timestamp + 2000 + Math.random() * 3000;
+      }
+      const wdx = w.targetX - w.x, wdy = w.targetY - w.y;
+      const wdist = Math.hypot(wdx, wdy);
+      if (wdist > 2) {
+        w.x += (wdx / wdist) * w.speed * dt;
+        w.y += (wdy / wdist) * w.speed * dt;
       }
     });
 
@@ -2732,14 +3086,17 @@ function drawDude(cx, cy, color, label, opts) {
     if (facing === 'down') ctx.rotate(Math.PI);
   }
 
-  if (!opts.riding) {
+  if (!opts.riding && !opts.swimming) {
     ctx.fillStyle = 'rgba(0,0,0,0.35)';
     ctx.beginPath();
     ctx.ellipse(0, 0, 12, 5, 0, 0, Math.PI * 2);
     ctx.fill();
   }
 
-  if (opts.sitting) {
+  if (opts.swimming) {
+    // legs are underwater - nothing drawn below the waterline overlay
+    // added lower down, once the rest of the body is in place
+  } else if (opts.sitting) {
     // knees bent, legs tucked toward whichever way they're facing instead
     // of hanging straight down like a standing pose - same tucked-forward
     // trick frontRiding uses, just shorter and nudged in the facing direction
@@ -3012,6 +3369,25 @@ function drawDude(cx, cy, color, label, opts) {
     });
   }
 
+  if (opts.swimming) {
+    // solid waterline right at hip height, cutting the character off where
+    // the (unrendered) legs would be - reads as submerged rather than
+    // standing on the surface - plus a couple of rippling highlight rings
+    const t = performance.now() / 500;
+    ctx.fillStyle = 'rgba(55,110,145,0.9)';
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 15, 7, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.ellipse(0, -6, 11 + Math.sin(t) * 2, 4 + Math.sin(t), 0, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.ellipse(6, -4, 5 + Math.sin(t + 1.4) * 1.5, 2, 0, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
   if (label) {
     ctx.font = 'bold 11px monospace';
     ctx.textAlign = 'center';
@@ -3079,7 +3455,7 @@ function drawHeadlightBeam(x, y, dx, dy, len) {
   ctx.restore();
 }
 
-function drawMotorcycle(cx, cy, facing, color, lit) {
+function drawMotorcycle(cx, cy, facing, color, lit, noShadow) {
   const frameColor = color || '#8f2e2e';
   ctx.save();
   ctx.translate(cx, cy - 6);
@@ -3089,10 +3465,12 @@ function drawMotorcycle(cx, cy, facing, color, lit) {
     const dir = facing === 'right' ? 1 : -1;
     ctx.scale(dir, 1);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath();
-    ctx.ellipse(0, 13, 26, 7, 0, 0, Math.PI * 2);
-    ctx.fill();
+    if (!noShadow) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath();
+      ctx.ellipse(0, 13, 26, 7, 0, 0, Math.PI * 2);
+      ctx.fill();
+    }
 
     // rear wheel - bigger, with a visible tire tread ring
     ctx.fillStyle = '#0f0f0f';
@@ -3163,8 +3541,10 @@ function drawMotorcycle(cx, cy, facing, color, lit) {
   } else {
     if (facing === 'down') ctx.rotate(Math.PI);
 
-    ctx.fillStyle = 'rgba(0,0,0,0.35)';
-    ctx.beginPath(); ctx.ellipse(0, 3, 14, 22, 0, 0, Math.PI * 2); ctx.fill();
+    if (!noShadow) {
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.beginPath(); ctx.ellipse(0, 3, 14, 22, 0, 0, Math.PI * 2); ctx.fill();
+    }
 
     // front and rear wheels, bigger and stacked front-to-back
     ctx.fillStyle = '#0f0f0f';
@@ -3584,7 +3964,7 @@ function drawRoads(camX, camY) {
   });
   NAMED_STREETS.forEach(street => {
     ctx.fillStyle = asphalt;
-    ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, WORLD_H);
+    ctx.fillRect(street.x - camX, 0 - camY, ROAD_W, DOWNTOWN_H);
   });
 
   ROAD_WEAR_SPOTS.forEach(spot => {
@@ -3604,7 +3984,7 @@ function drawRoads(camX, camY) {
     });
   });
   NAMED_STREETS.forEach(street => {
-    freeSegments(WORLD_H, numberedZones).forEach(seg => {
+    freeSegments(DOWNTOWN_H, numberedZones).forEach(seg => {
       ctx.fillRect(street.x - SIDEWALK_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
       ctx.fillRect(street.x + ROAD_W - camX, seg.start - camY, SIDEWALK_W, seg.end - seg.start);
     });
@@ -3632,7 +4012,7 @@ function drawRoads(camX, camY) {
     });
   });
   NAMED_STREETS.forEach(street => {
-    freeSegments(WORLD_H, numberedZones).forEach(seg => {
+    freeSegments(DOWNTOWN_H, numberedZones).forEach(seg => {
       for (let syw = seg.start; syw < seg.end; syw += seamGap) {
         const sy = syw - camY;
         if (sy < -5 || sy > canvas.height + 5) continue;
@@ -3659,7 +4039,7 @@ function drawRoads(camX, camY) {
     }
   });
   NAMED_STREETS.forEach(street => {
-    for (let dy = 20; dy < WORLD_H; dy += dash + gap) {
+    for (let dy = 20; dy < DOWNTOWN_H; dy += dash + gap) {
       const overlapsIntersection = numberedZones.some(z => dy < z.end && dy + dash > z.start);
       if (!overlapsIntersection) {
         ctx.fillRect(street.x + ROAD_W/2 - 2 - camX, dy - camY, 4, dash);
@@ -3717,7 +4097,7 @@ function drawRoads(camX, camY) {
 
   NAMED_STREETS.forEach(vs => {
     const textW = ctx.measureText(vs.name).width;
-    for (let ly = 300; ly < WORLD_H; ly += labelSpacing) {
+    for (let ly = 300; ly < DOWNTOWN_H; ly += labelSpacing) {
       const overlaps = numberedZones.some(z => ly - textW/2 < z.end && ly + textW/2 > z.start);
       const inRiver = ly + textW/2 > RIVER_Y && ly - textW/2 < RIVER_Y + RIVER_H;
       if (!overlaps && !inRiver) {
@@ -3734,28 +4114,36 @@ function drawRoads(camX, camY) {
 // the river separating downtown from the south side, drawn on top of the
 // roads so it covers up Oak/Elm/Cedar's dead-ended pavement (they simply
 // don't get painted this far south, per drawRoads' maxY cap) and Pine/
-// Maple's plain asphalt gets a proper bridge deck laid over it instead
-function drawRiver(camX, camY) {
-  const y = RIVER_Y - camY;
-  if (y > canvas.height + 20 || y + RIVER_H < -20) return;
+// Maple's plain asphalt gets a proper bridge deck laid over it instead.
+// Generalized so the same function also draws the second river further
+// south, with a rustic wood-plank bridge instead of a steel truss one.
+function drawRiver(camX, camY, riverY = RIVER_Y, riverH = RIVER_H, crossings = NAMED_STREETS.filter(s => s.bridge), style = 'steel') {
+  const y = riverY - camY;
+  if (y > canvas.height + 20 || y + riverH < -20) return;
 
-  const grad = ctx.createLinearGradient(0, y, 0, y + RIVER_H);
-  grad.addColorStop(0, '#3a6fa0');
-  grad.addColorStop(0.5, '#2c5580');
-  grad.addColorStop(1, '#234868');
+  const grad = ctx.createLinearGradient(0, y, 0, y + riverH);
+  if (style === 'wood') {
+    grad.addColorStop(0, '#3a7a8a');
+    grad.addColorStop(0.5, '#2c5f70');
+    grad.addColorStop(1, '#234a58');
+  } else {
+    grad.addColorStop(0, '#3a6fa0');
+    grad.addColorStop(0.5, '#2c5580');
+    grad.addColorStop(1, '#234868');
+  }
   ctx.fillStyle = grad;
-  ctx.fillRect(0 - camX, y, WORLD_W, RIVER_H);
+  ctx.fillRect(0 - camX, y, WORLD_W, riverH);
 
   // drifting shimmer streaks, same trick the park pond uses
   ctx.save();
   ctx.beginPath();
-  ctx.rect(0 - camX, y, WORLD_W, RIVER_H);
+  ctx.rect(0 - camX, y, WORLD_W, riverH);
   ctx.clip();
   const t = performance.now() / 1000;
   for (let i = 0; i < 10; i++) {
     const phase = t * 0.3 + i * 1.7;
     const sx = (i * 500 + Math.sin(phase) * 250) % (WORLD_W + 500) - 250 - camX;
-    const sy = y + RIVER_H * 0.5 + Math.sin(phase * 0.6 + i) * RIVER_H * 0.3;
+    const sy = y + riverH * 0.5 + Math.sin(phase * 0.6 + i) * riverH * 0.3;
     ctx.fillStyle = `rgba(255,255,255,${(0.06 + 0.04 * Math.sin(phase * 1.2)).toFixed(3)})`;
     ctx.beginPath();
     ctx.ellipse(sx, sy, 110, 9, 0, 0, Math.PI * 2);
@@ -3766,18 +4154,58 @@ function drawRiver(camX, camY) {
   ctx.strokeStyle = 'rgba(0,0,0,0.25)';
   ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(0 - camX, y); ctx.lineTo(WORLD_W - camX, y); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(0 - camX, y + RIVER_H); ctx.lineTo(WORLD_W - camX, y + RIVER_H); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0 - camX, y + riverH); ctx.lineTo(WORLD_W - camX, y + riverH); ctx.stroke();
+
+  if (style === 'wood') {
+    // rustic single-lane wood-plank bridges, no sidewalks or lane paint -
+    // just a plank deck with simple log rails and support posts
+    crossings.forEach(s => {
+      const bx = s.x - camX;
+
+      const deckGrad = ctx.createLinearGradient(bx, 0, bx + ROAD_W, 0);
+      deckGrad.addColorStop(0, '#6a4a2e');
+      deckGrad.addColorStop(0.5, '#8a6440');
+      deckGrad.addColorStop(1, '#6a4a2e');
+      ctx.fillStyle = deckGrad;
+      ctx.fillRect(bx, y, ROAD_W, riverH);
+
+      // individual planks running crosswise
+      ctx.strokeStyle = 'rgba(30,20,10,0.4)';
+      ctx.lineWidth = 2;
+      const plankGap = 14;
+      ctx.beginPath();
+      for (let py = 8; py < riverH; py += plankGap) {
+        ctx.moveTo(bx, y + py);
+        ctx.lineTo(bx + ROAD_W, y + py);
+      }
+      ctx.stroke();
+
+      // log support posts poking up through the deck at intervals
+      ctx.fillStyle = '#4a3320';
+      const postGap = 60;
+      for (let py = 20; py < riverH; py += postGap) {
+        ctx.beginPath(); ctx.arc(bx + 10, y + py, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(bx + ROAD_W - 10, y + py, 5, 0, Math.PI * 2); ctx.fill();
+      }
+
+      // simple log railings along each edge
+      ctx.fillStyle = '#5a3f26';
+      ctx.fillRect(bx - 4, y - 4, 4, riverH + 8);
+      ctx.fillRect(bx + ROAD_W, y - 4, 4, riverH + 8);
+    });
+    return;
+  }
 
   // bridges - a steel truss deck flanked by real sidewalks (matching the
   // sidewalks the road has everywhere else), laid right over the water at
   // every named street
-  NAMED_STREETS.filter(s => s.bridge).forEach(s => {
+  crossings.forEach(s => {
     const bx = s.x - camX;
 
     // sidewalks continue straight across on both sides of the deck
     ctx.fillStyle = '#9a9a92';
-    ctx.fillRect(bx - SIDEWALK_W, y, SIDEWALK_W, RIVER_H);
-    ctx.fillRect(bx + ROAD_W, y, SIDEWALK_W, RIVER_H);
+    ctx.fillRect(bx - SIDEWALK_W, y, SIDEWALK_W, riverH);
+    ctx.fillRect(bx + ROAD_W, y, SIDEWALK_W, riverH);
 
     // steel deck
     const deckGrad = ctx.createLinearGradient(bx, 0, bx + ROAD_W, 0);
@@ -3785,14 +4213,14 @@ function drawRiver(camX, camY) {
     deckGrad.addColorStop(0.5, '#868d96');
     deckGrad.addColorStop(1, '#5a6068');
     ctx.fillStyle = deckGrad;
-    ctx.fillRect(bx, y, ROAD_W, RIVER_H);
+    ctx.fillRect(bx, y, ROAD_W, riverH);
 
     // truss cross-bracing, the classic zigzag of a steel girder bridge
     ctx.strokeStyle = 'rgba(20,25,30,0.5)';
     ctx.lineWidth = 3;
     const braceGap = 44;
     ctx.beginPath();
-    for (let by = 0; by < RIVER_H; by += braceGap) {
+    for (let by = 0; by < riverH; by += braceGap) {
       ctx.moveTo(bx, y + by);
       ctx.lineTo(bx + ROAD_W, y + by + braceGap / 2);
       ctx.lineTo(bx, y + by + braceGap);
@@ -3801,15 +4229,323 @@ function drawRiver(camX, camY) {
 
     // faint lane line down the middle of the deck, same as the roads
     ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    for (let ly = 10; ly < RIVER_H; ly += 30) {
+    for (let ly = 10; ly < riverH; ly += 30) {
       ctx.fillRect(bx + ROAD_W / 2 - 1, y + ly, 2, 16);
     }
 
     // dark metal railings along the outer edge of each sidewalk
     ctx.fillStyle = '#33383e';
-    ctx.fillRect(bx - SIDEWALK_W - 4, y - 4, 4, RIVER_H + 8);
-    ctx.fillRect(bx + ROAD_W + SIDEWALK_W, y - 4, 4, RIVER_H + 8);
+    ctx.fillRect(bx - SIDEWALK_W - 4, y - 4, 4, riverH + 8);
+    ctx.fillRect(bx + ROAD_W + SIDEWALK_W, y - 4, 4, riverH + 8);
   });
+}
+
+// the dirt-road continuation of Pine/Maple St, from downtown's edge north
+// through the wilderness - no sidewalks, no lane paint, just packed dirt
+function drawNorthRoads(camX, camY) {
+  NORTH_ROADS.forEach(s => {
+    const bx = s.x - camX;
+    const top = WORLD_TOP - camY;
+    const h = 0 - WORLD_TOP;
+    if (bx + ROAD_W < 0 || bx > canvas.width || top > canvas.height || top + h < 0) return;
+
+    ctx.fillStyle = '#8a7355';
+    ctx.fillRect(bx, top, ROAD_W, h);
+
+    // a few darker ruts/patches so it doesn't read as one flat tan block
+    for (let ry = 0; ry < h; ry += 90) {
+      const wy = WORLD_TOP + ry;
+      const n = hashNoise(s.x, wy);
+      ctx.fillStyle = `rgba(60,45,28,${0.15 + n * 0.15})`;
+      ctx.fillRect(bx + 10 + n * (ROAD_W - 60), top + ry, 40, 18);
+    }
+  });
+}
+
+// a raised dirt mound spanning the FULL width of whichever road it's on
+// (so there's no lane you could ride through to dodge it): a straight
+// flat front edge (not a point), a short climb, a wide flat plateau
+// across the middle, a short drop, then a straight flat back edge to
+// match. `top` is the road's own screen-space top edge - shared by any
+// road a ramp happens to belong to, not just Ridge Road
+function drawRampMound(rx, top, r) {
+  const halfLen = 70 * r.size;
+  const plateauHalf = halfLen * 0.4;
+  const edgeHalfH = (ROAD_W / 2) * 0.4; // half-height of the flat front/back edge
+  if (rx + halfLen < -20 || rx - halfLen > canvas.width + 20) return;
+
+  const topY = top, botY = top + ROAD_W, midY = top + ROAD_W / 2;
+  const edgeTopY = midY - edgeHalfH, edgeBotY = midY + edgeHalfH;
+
+  const grad = ctx.createLinearGradient(rx - halfLen, 0, rx + halfLen, 0);
+  grad.addColorStop(0, '#6a4a2e');
+  grad.addColorStop(0.5, '#b39264');
+  grad.addColorStop(1, '#6a4a2e');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.moveTo(rx - halfLen, edgeTopY);   // straight front edge, top...
+  ctx.lineTo(rx - halfLen, edgeBotY);   // ...to bottom
+  ctx.lineTo(rx - plateauHalf, botY);   // climb up along the bottom
+  ctx.lineTo(rx + plateauHalf, botY);   // plateau, bottom
+  ctx.lineTo(rx + halfLen, edgeBotY);   // drop back down...
+  ctx.lineTo(rx + halfLen, edgeTopY);   // straight back edge, bottom to top
+  ctx.lineTo(rx + plateauHalf, topY);   // climb back up along the top
+  ctx.lineTo(rx - plateauHalf, topY);   // plateau, top
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+  ctx.lineWidth = 2;
+  ctx.stroke();
+
+  // plateau edges top and bottom, plus a couple of contour lines on
+  // each slope so the climb/drop actually reads
+  ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(rx - plateauHalf, topY); ctx.lineTo(rx + plateauHalf, topY);
+  ctx.moveTo(rx - plateauHalf, botY); ctx.lineTo(rx + plateauHalf, botY);
+  ctx.stroke();
+  [0.35, 0.7].forEach(f => {
+    const slopeLen = halfLen - plateauHalf;
+    const lx1 = rx - plateauHalf - slopeLen * (1 - f), lx2 = rx + plateauHalf + slopeLen * (1 - f);
+    const inset = edgeHalfH + (ROAD_W / 2 - edgeHalfH) * f;
+    ctx.beginPath(); ctx.moveTo(lx1, midY - inset); ctx.lineTo(lx1, midY + inset); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(lx2, midY - inset); ctx.lineTo(lx2, midY + inset); ctx.stroke();
+  });
+}
+
+// a dirt road running the full width of the world up near the mountains,
+// with a few raised jump ramps built into it
+function drawRidgeRoad(camX, camY) {
+  const top = RIDGE_ROAD_Y - camY;
+  if (top > canvas.height || top + ROAD_W < 0) return;
+
+  ctx.fillStyle = '#8a7355';
+  ctx.fillRect(0 - camX, top, WORLD_W, ROAD_W);
+
+  for (let rx = 0; rx < WORLD_W; rx += 90) {
+    const sx = rx - camX;
+    if (sx < -30 || sx > canvas.width + 30) continue;
+    const n = hashNoise(rx, RIDGE_ROAD_Y);
+    ctx.fillStyle = `rgba(60,45,28,${0.15 + n * 0.15})`;
+    ctx.fillRect(sx, top + 10 + n * (ROAD_W - 60), 18, 40);
+  }
+
+  JUMP_RAMPS.forEach(r => {
+    drawRampMound(r.x - camX, top, r);
+  });
+}
+
+// the two loop trails - a vertical spur dropping off each end of Ridge
+// Road, then a horizontal run back in to rejoin Pine St or Maple St,
+// each with their own jump ramps along the horizontal stretch
+function drawLoopTrails(camX, camY) {
+  LOOP_SEGMENTS.forEach(seg => {
+    if (seg.horizontal) {
+      const top = seg.y - camY;
+      if (top > canvas.height || top + ROAD_W < 0) return;
+      const left = seg.x0 - camX, right = seg.x1 - camX;
+      if (right < 0 || left > canvas.width) return;
+      ctx.fillStyle = '#8a7355';
+      ctx.fillRect(left, top, right - left, ROAD_W);
+      for (let rx = seg.x0; rx < seg.x1; rx += 90) {
+        const sx = rx - camX;
+        if (sx < -30 || sx > canvas.width + 30) continue;
+        const n = hashNoise(rx, seg.y);
+        ctx.fillStyle = `rgba(60,45,28,${0.15 + n * 0.15})`;
+        ctx.fillRect(sx, top + 10 + n * (ROAD_W - 60), 18, 40);
+      }
+    } else {
+      const left = seg.x - camX;
+      const top = seg.y0 - camY, bottom = seg.y1 - camY;
+      if (left + ROAD_W < 0 || left > canvas.width) return;
+      if (bottom < 0 || top > canvas.height) return;
+      ctx.fillStyle = '#8a7355';
+      ctx.fillRect(left, Math.min(top, bottom), ROAD_W, Math.abs(bottom - top));
+      for (let ry = seg.y0; ry < seg.y1; ry += 90) {
+        const sy = ry - camY;
+        if (sy < -30 || sy > canvas.height + 30) continue;
+        const n = hashNoise(seg.x, ry);
+        ctx.fillStyle = `rgba(60,45,28,${0.15 + n * 0.15})`;
+        ctx.fillRect(left + 10 + n * (ROAD_W - 60), sy, 18, 40);
+      }
+    }
+  });
+
+  LOOP_RAMPS.forEach(r => {
+    drawRampMound(r.x - camX, LOOP_Y - camY, r);
+  });
+}
+
+// still lake water in the middle of the forest - same shimmering-ellipse
+// treatment as the park pond, just bigger
+function drawLake(camX, camY) {
+  const lx = LAKE.x - camX, ly = LAKE.y - camY;
+  if (lx + LAKE.w < -50 || lx > canvas.width + 50 || ly + LAKE.h < -50 || ly > canvas.height + 50) return;
+
+  const cx = lx + LAKE.w / 2, cy = ly + LAKE.h / 2;
+  const rx = LAKE.w / 2, ry = LAKE.h / 2;
+  const grad = ctx.createRadialGradient(cx - rx * 0.3, cy - ry * 0.35, 4, cx, cy, Math.max(rx, ry));
+  grad.addColorStop(0, '#5b93c2');
+  grad.addColorStop(0.55, '#33708f');
+  grad.addColorStop(1, '#234a58');
+  ctx.fillStyle = grad;
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#234a58';
+  ctx.lineWidth = 3;
+  ctx.stroke();
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+  ctx.clip();
+  const t = performance.now() / 1000;
+  for (let i = 0; i < 4; i++) {
+    const phase = t * 0.22 + i * 2.4;
+    const sx = cx + Math.sin(phase) * rx * 0.6;
+    const sy = cy + Math.cos(phase * 0.7) * ry * 0.5;
+    ctx.fillStyle = `rgba(255,255,255,${0.07 + 0.05 * Math.sin(phase * 1.3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, rx * 0.3, ry * 0.1, phase * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// a small wooden dock sticking out from shore into the lake, where the
+// boat is moored - drawn after the lake so the planks read as sitting
+// on top of the water rather than under it
+function drawDock(camX, camY) {
+  const dx = LAKE_DOCK.x - camX, dy = LAKE_DOCK.y - camY;
+  if (dx + LAKE_DOCK.w < -20 || dx > canvas.width + 20 || dy > canvas.height + 20 || dy + LAKE_DOCK.h < -20) return;
+
+  ctx.fillStyle = '#6a4a2e';
+  ctx.fillRect(dx, dy, LAKE_DOCK.w, LAKE_DOCK.h);
+
+  ctx.strokeStyle = 'rgba(30,20,10,0.35)';
+  ctx.lineWidth = 1.5;
+  for (let py = 8; py < LAKE_DOCK.h; py += 12) {
+    ctx.beginPath();
+    ctx.moveTo(dx, dy + py);
+    ctx.lineTo(dx + LAKE_DOCK.w, dy + py);
+    ctx.stroke();
+  }
+
+  ctx.fillStyle = '#4a3320';
+  for (let py = 14; py < LAKE_DOCK.h - 10; py += 40) {
+    ctx.beginPath(); ctx.arc(dx - 3, dy + py, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(dx + LAKE_DOCK.w + 3, dy + py, 4, 0, Math.PI * 2); ctx.fill();
+  }
+}
+
+// a stand-up paddleboard - long and narrow, sized so a standing rider
+// (drawn separately, on top) actually fits on it, with a rounded nose
+// pointed whichever way it's currently facing
+function drawPaddleboard(cx, cy, facing, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const angle = facing === 'left' ? Math.PI : facing === 'right' ? 0 : facing === 'up' ? -Math.PI / 2 : Math.PI / 2;
+  ctx.rotate(angle);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(-50, 0, 16, 7, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // board outline - flat tail, rounded nose - noticeably longer than the
+  // rider is tall, like a real paddleboard rather than a toy underneath them
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-55, -13);
+  ctx.lineTo(34, -13);
+  ctx.quadraticCurveTo(64, 0, 34, 13);
+  ctx.lineTo(-55, 13);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = shadeColor(color, -20);
+  ctx.beginPath();
+  ctx.moveTo(-46, -8);
+  ctx.lineTo(25, -8);
+  ctx.quadraticCurveTo(46, 0, 25, 8);
+  ctx.lineTo(-46, 8);
+  ctx.closePath();
+  ctx.fill();
+
+  // deck traction pad where the rider stands
+  ctx.fillStyle = shadeColor(color, 25);
+  ctx.fillRect(-30, -5, 46, 10);
+
+  ctx.restore();
+}
+
+// a dashed dirt trail winding through the woods - purely cosmetic
+function drawHikingTrail(camX, camY) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(138,115,85,0.8)';
+  ctx.lineWidth = 5;
+  ctx.setLineDash([14, 10]);
+  ctx.beginPath();
+  HIKING_TRAIL.forEach((p, i) => {
+    const x = p.x - camX, y = p.y - camY;
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  ctx.restore();
+}
+
+// short sandy access paths leading from the shore down into the lake
+function drawLakePaths(camX, camY) {
+  ctx.save();
+  ctx.strokeStyle = 'rgba(200,180,140,0.8)';
+  ctx.lineWidth = 8;
+  LAKE_PATHS.forEach(path => {
+    ctx.beginPath();
+    path.forEach((p, i) => {
+      const x = p.x - camX, y = p.y - camY;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+  ctx.restore();
+}
+
+// the sheer mountain wall marking the world's northern edge - a static,
+// jagged gray-and-snow silhouette rather than anything climbable
+function drawMountainWall(camX, camY) {
+  const top = WORLD_TOP - camY;
+  const h = MOUNTAIN_Y - WORLD_TOP;
+  if (top > canvas.height || top + h < 0) return;
+
+  ctx.fillStyle = '#5a5a56';
+  ctx.fillRect(0 - camX, top, WORLD_W, h);
+
+  // peaks rise from the near edge (bottom of this band, adjacent to the
+  // forest) up and away toward the world's true edge
+  const bottom = top + h;
+  const peakGap = 260;
+  for (let px = -100; px < WORLD_W + 100; px += peakGap) {
+    const wx = px - camX;
+    const peakH = 90 + hashNoise(px, MOUNTAIN_Y) * 70;
+    ctx.fillStyle = '#4a4a48';
+    ctx.beginPath();
+    ctx.moveTo(wx - peakGap * 0.6, bottom - 60);
+    ctx.lineTo(wx, bottom - peakH - 60);
+    ctx.lineTo(wx + peakGap * 0.6, bottom - 60);
+    ctx.closePath();
+    ctx.fill();
+
+    // snow caps
+    ctx.fillStyle = 'rgba(235,240,245,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(wx - peakGap * 0.18, bottom - peakH * 0.62 - 60);
+    ctx.lineTo(wx, bottom - peakH - 60);
+    ctx.lineTo(wx + peakGap * 0.18, bottom - peakH * 0.62 - 60);
+    ctx.closePath();
+    ctx.fill();
+  }
 }
 
 function drawParkGround(camX, camY) {
@@ -3981,7 +4717,7 @@ NUMBERED_STREETS.forEach(s => {
 });
 NAMED_STREETS.forEach(s => {
   for (let i = 0; i < 50; i++) {
-    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: Math.random() * WORLD_H, r: 6 + Math.random() * 12 });
+    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: Math.random() * DOWNTOWN_H, r: 6 + Math.random() * 12 });
   }
 });
 
@@ -3996,7 +4732,7 @@ NAMED_STREETS.forEach(s => {
 });
 NAMED_STREETS.forEach(s => {
   for (let i = 0; i < 45; i++) {
-    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: RIVER_Y + RIVER_H + Math.random() * (WORLD_H - RIVER_Y - RIVER_H), r: 8 + Math.random() * 18, a: 0.16 + Math.random() * 0.12 });
+    ROAD_WEAR_SPOTS.push({ x: s.x + Math.random() * ROAD_W, y: RIVER_Y + RIVER_H + Math.random() * (DOWNTOWN_H - RIVER_Y - RIVER_H), r: 8 + Math.random() * 18, a: 0.16 + Math.random() * 0.12 });
   }
 });
 
@@ -4014,10 +4750,10 @@ function trafficLane(car) {
 // starts on rather than being free to bounce straight through the water -
 // bridge streets (Pine/Maple) keep the full north-to-south range
 function verticalStreetBounds(street) {
-  if (street.bridge) return { minY: 100, maxY: WORLD_H - 100 };
+  if (street.bridge) return { minY: 100, maxY: DOWNTOWN_H - 100 };
   return Math.random() < 0.5
     ? { minY: 100, maxY: RIVER_Y - 100 }
-    : { minY: RIVER_Y + RIVER_H + 100, maxY: WORLD_H - 100 };
+    : { minY: RIVER_Y + RIVER_H + 100, maxY: DOWNTOWN_H - 100 };
 }
 
 // shared bounce-and-lane-ease movement for any street vehicle (car or
@@ -4069,7 +4805,7 @@ const trafficCars = [];
   const cruiser1 = { axis: 'h', street: NUMBERED_STREETS[1], x: 800, minX: 100, maxX: WORLD_W - 100, dir: 1, speed: 2.4, color: '#ffffff', police: true };
   cruiser1.y = trafficLane(cruiser1);
   trafficCars.push(cruiser1);
-  const cruiser2 = { axis: 'v', street: NAMED_STREETS[1], y: 1400, minY: 100, maxY: WORLD_H - 100, dir: -1, speed: 2.4, color: '#ffffff', police: true };
+  const cruiser2 = { axis: 'v', street: NAMED_STREETS[1], y: 1400, minY: 100, maxY: DOWNTOWN_H - 100, dir: -1, speed: 2.4, color: '#ffffff', police: true };
   cruiser2.x = trafficLane(cruiser2);
   trafficCars.push(cruiser2);
 
@@ -4088,7 +4824,7 @@ const trafficCars = [];
     const car = {
       ...spec,
       minX: 100, maxX: WORLD_W - 100,
-      minY: RIVER_Y + RIVER_H + 100, maxY: WORLD_H - 100,
+      minY: RIVER_Y + RIVER_H + 100, maxY: DOWNTOWN_H - 100,
       speed: 1.6 + Math.random() * 1.2,
       color: CAR_COLORS[Math.floor(Math.random() * CAR_COLORS.length)]
     };
@@ -4257,7 +4993,7 @@ NUMBERED_STREETS.forEach(s => {
   }
 });
 NAMED_STREETS.forEach(s => {
-  for (let y = 130; y < WORLD_H; y += LAMP_SPACING) {
+  for (let y = 130; y < DOWNTOWN_H; y += LAMP_SPACING) {
     STREET_LAMPS.push({ x: s.x - SIDEWALK_W - 6, y });
     STREET_LAMPS.push({ x: s.x + ROAD_W + SIDEWALK_W + 6, y });
   }
@@ -4299,24 +5035,23 @@ function drawOutside() {
   let camX = player.x + player.w / 2 - canvas.width / 2;
   let camY = player.y + player.h / 2 - canvas.height / 2;
   camX = Math.max(0, Math.min(WORLD_W - canvas.width, camX));
-  camY = Math.max(0, Math.min(WORLD_H - canvas.height, camY));
+  camY = Math.max(WORLD_TOP, Math.min(WORLD_H - canvas.height, camY));
   const nightFactor = getNightFactor(performance.now());
 
-  // ground color switches to a duller, grayer tone south of the river -
-  // the seedy side of town doesn't get the same well-kept green
-  const southBankScreenY = RIVER_Y + RIVER_H - camY;
-  if (southBankScreenY <= 0) {
-    ctx.fillStyle = '#52564a';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else if (southBankScreenY >= canvas.height) {
-    ctx.fillStyle = '#4a7c3c';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  } else {
-    ctx.fillStyle = '#4a7c3c';
-    ctx.fillRect(0, 0, canvas.width, southBankScreenY);
-    ctx.fillStyle = '#52564a';
-    ctx.fillRect(0, southBankScreenY, canvas.width, canvas.height - southBankScreenY);
-  }
+  // ground color banding by latitude, north to south - bare rocky ground
+  // at the foot of the mountains, pine-forest floor, green downtown, then
+  // the duller/grayer seedy south side
+  const GROUND_BANDS = [
+    { y0: WORLD_TOP, y1: MOUNTAIN_Y, color: '#6a6a62' },
+    { y0: MOUNTAIN_Y, y1: 0, color: '#3a4a2e' },
+    { y0: 0, y1: RIVER_Y + RIVER_H, color: '#4a7c3c' },
+    { y0: RIVER_Y + RIVER_H, y1: WORLD_H, color: '#52564a' }
+  ];
+  GROUND_BANDS.forEach(band => {
+    const top = Math.max(0, band.y0 - camY);
+    const bottom = Math.min(canvas.height, band.y1 - camY);
+    if (bottom > top) { ctx.fillStyle = band.color; ctx.fillRect(0, top, canvas.width, bottom - top); }
+  });
 
   ctx.strokeStyle = 'rgba(255,255,255,0.05)';
   ctx.lineWidth = 1;
@@ -4347,9 +5082,22 @@ function drawOutside() {
     }
   }
 
+  // paths/trails are drawn before any road that might cross them, so the
+  // road paints over the crossing instead of the thin path cutting
+  // visibly across the dirt - the lake itself still covers the submerged
+  // stretch of the lake paths afterward, further down
+  drawLakePaths(camX, camY);
+  drawHikingTrail(camX, camY);
   drawRoads(camX, camY);
+  drawNorthRoads(camX, camY);
   drawRiver(camX, camY);
+  drawRiver(camX, camY, RIVER2_Y, RIVER2_H, NORTH_ROADS, 'wood');
   drawParkGround(camX, camY);
+  drawLake(camX, camY);
+  drawDock(camX, camY);
+  drawRidgeRoad(camX, camY);
+  drawLoopTrails(camX, camY);
+  drawMountainWall(camX, camY);
 
   const currentPhase = getLightPhase(performance.now());
   TRAFFIC_LIGHTS.forEach(light => {
@@ -4365,13 +5113,16 @@ function drawOutside() {
     ...citizens.filter(c => c.state !== 'inside').map(c => ({ type: 'citizen', obj: c, sortY: c.y })),
     ...PARK_TREES.map(t => ({ type: 'tree', obj: t, sortY: PARK.y + t.y })),
     ...CITY_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
+    ...FOREST_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
     ...parkWalkers.map(w => ({ type: 'parkwalker', obj: w, sortY: PARK.y + w.y })),
     ...(motorcycleParked ? [{ type: 'parkedmoto', obj: motorcycleParked, sortY: motorcycleParked.y }] : []),
     ...(!player.hasMotorcycle ? [{ type: 'parkedmoto', obj: MOTO_SHOWROOM_SPOT, sortY: MOTO_SHOWROOM_SPOT.y }] : []),
     ...(carParked ? [{ type: 'parkedcar', obj: carParked, sortY: carParked.y }] : []),
     ...(!player.hasCar ? [{ type: 'parkedcar', obj: CAR_SHOWROOM_SPOT, sortY: CAR_SHOWROOM_SPOT.y }] : []),
+    ...(boatParked ? [{ type: 'parkedboat', obj: boatParked, sortY: boatParked.y }] : []),
     ...trafficCars.map(car => ({ type: 'trafficcar', obj: car, sortY: car.y })),
     ...trafficBikes.map(bike => ({ type: 'trafficbike', obj: bike, sortY: bike.y })),
+    ...lakeSwimmers.map(w => ({ type: 'lakeswimmer', obj: w, sortY: w.y })),
     { type: 'player', sortY: player.y + player.h }
   ];
   drawables.sort((a, b) => a.sortY - b.sortY);
@@ -4399,6 +5150,13 @@ function drawOutside() {
       drawMotorcycle(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color);
     } else if (d.type === 'parkedcar') {
       drawCar(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color, false, nightFactor);
+    } else if (d.type === 'parkedboat') {
+      drawPaddleboard(d.obj.x - camX, d.obj.y - camY, d.obj.facing, player.boatColor);
+    } else if (d.type === 'lakeswimmer') {
+      const w = d.obj;
+      const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
+      drawBloodSpot(w, camX, camY);
+      drawDude(w.x - camX, w.y - camY, w.color, null, { gender: w.gender, hairColor: w.hairColor, hairstyle: w.hairstyle, skinTone: w.skinTone, skirt: w.skirt, skirtColor: w.skirtColor, knockedDown: isDown, swimming: !isDown, moving: Math.hypot(w.targetX - w.x, w.targetY - w.y) > 2 });
     } else if (d.type === 'trafficcar') {
       const car = d.obj;
       const facing = car.axis === 'h' ? (car.dir > 0 ? 'right' : 'left') : (car.dir > 0 ? 'down' : 'up');
@@ -4415,7 +5173,43 @@ function drawOutside() {
       const py = player.y + player.h - camY;
       if (player.onCar) {
         drawCar(px, py, player.facing, player.carColor, false, nightFactor);
+      } else if (player.onBoat) {
+        drawPaddleboard(px, py, player.facing, player.boatColor);
+        drawBloodSpot(player, camX, camY);
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, knockedDown: performance.now() < playerHitUntil, moving: player.moving });
       } else {
+        // ramp jump: the bike+rider group hops up and grows slightly
+        // (bigger = closer to camera = airborne) while a real shadow stays
+        // pinned to the ground and shrinks - that separation between bike
+        // and shadow is what actually reads as "in the air". Even without
+        // a real jump triggered, just riding across a ramp's slope gives
+        // the same treatment at a much smaller scale, so the bike visibly
+        // dips up and back down following the ground under it
+        const jumpLeft = player.jumpUntil - performance.now();
+        const isJumping = player.onMotorcycle && jumpLeft > 0;
+        const terrainLift = (player.onMotorcycle && !isJumping)
+          ? rampGroundLift(player.x + player.w / 2, player.y + player.h / 2)
+          : 0;
+        let jLift = 0;
+        if (isJumping) {
+          const jProgress = 1 - jumpLeft / player.jumpTotalMs;
+          jLift = Math.sin(jProgress * Math.PI) * player.jumpHeightMult;
+          ctx.fillStyle = 'rgba(0,0,0,0.3)';
+          ctx.beginPath();
+          ctx.ellipse(px, py + 4, 22 * Math.max(0.3, 1 - jLift * 0.5), 8 * Math.max(0.3, 1 - jLift * 0.5), 0, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (terrainLift > 0) {
+          jLift = terrainLift * 0.4;
+        }
+        drawBloodSpot(player, camX, camY);
+        if (jLift > 0) {
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.translate(0, -jLift * 34);
+          ctx.scale(1 + jLift * 0.22, 1 + jLift * 0.22);
+          ctx.translate(-px, -py);
+        }
+
         // wheelie: tilt the bike+rider back around the rear wheel, front
         // end lifting up then settling back down over the duration
         const wheelieLeft = player.wheelieUntil - performance.now();
@@ -4429,10 +5223,10 @@ function drawOutside() {
           ctx.rotate(-dir * lift);
           ctx.translate(-px, -py);
         }
-        if (player.onMotorcycle) drawMotorcycle(px, py, player.facing, player.motoColor, true);
-        drawBloodSpot(player, camX, camY);
-        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil, moving: player.moving });
+        if (player.onMotorcycle) drawMotorcycle(px, py, player.facing, player.motoColor, true, isJumping);
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, muzzleFlash: performance.now() < muzzleFlashUntil, riding: player.onMotorcycle, knockedDown: performance.now() < playerHitUntil, swimming: player.swimming, moving: player.moving });
         if (doingWheelie) ctx.restore();
+        if (jLift > 0) ctx.restore();
       }
     }
   });
@@ -4490,7 +5284,24 @@ function drawOutside() {
     if (cdist < MOUNT_RADIUS) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      const hint = '[C] to drive';
+      const hint = '[M] to drive';
+      const hw = ctx.measureText(hint).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    }
+  }
+
+  if (boatParked && !player.onBoat) {
+    const bdist = Math.hypot(
+      (player.x + player.w / 2) - boatParked.x,
+      (player.y + player.h / 2) - boatParked.y
+    );
+    if (bdist < MOUNT_RADIUS) {
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      const hint = '[M] to hop on paddleboard';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -5045,25 +5856,47 @@ function drawMinimap() {
   const pad = 20;
   const mw = canvas.width - pad * 2;
   const mh = canvas.height - pad * 2 - 20;
-  const scale = Math.min(mw / WORLD_W, mh / WORLD_H);
+  const totalH = WORLD_H - WORLD_TOP;
+  const scale = Math.min(mw / WORLD_W, mh / totalH);
   const ox = pad + (mw - WORLD_W * scale) / 2;
-  const oy = pad + 20 + (mh - WORLD_H * scale) / 2;
+  const oy = pad + 20 + (mh - totalH * scale) / 2;
   const wx = x => ox + x * scale;
-  const wy = y => oy + y * scale;
+  const wy = y => oy + (y - WORLD_TOP) * scale;
 
   ctx.save();
   ctx.fillStyle = 'rgba(8,12,10,0.94)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.fillStyle = '#2f6a3f';
-  ctx.fillRect(wx(0), wy(0), WORLD_W * scale, WORLD_H * scale);
+  ctx.fillRect(wx(0), wy(WORLD_TOP), WORLD_W * scale, totalH * scale);
 
   ctx.fillStyle = '#3f8a4f';
   ctx.fillRect(wx(PARK.x), wy(PARK.y), PARK.w * scale, PARK.h * scale);
 
+  // the wilderness north of the second river - forest, then bare
+  // mountain ground, tinted distinctly from the city
+  ctx.fillStyle = '#354a2c';
+  ctx.fillRect(wx(0), wy(MOUNTAIN_Y), WORLD_W * scale, Math.max(2, (FOREST_Y - MOUNTAIN_Y) * scale));
+  ctx.fillStyle = '#6a6a62';
+  ctx.fillRect(wx(0), wy(WORLD_TOP), WORLD_W * scale, Math.max(2, (MOUNTAIN_Y - WORLD_TOP) * scale));
+
+  ctx.fillStyle = '#2a5a8a';
+  ctx.fillRect(wx(0), wy(RIVER_Y), WORLD_W * scale, Math.max(2, RIVER_H * scale));
+  ctx.fillStyle = '#2a6a78';
+  ctx.fillRect(wx(0), wy(RIVER2_Y), WORLD_W * scale, Math.max(2, RIVER2_H * scale));
+  ctx.fillStyle = '#33708f';
+  ctx.fillRect(wx(LAKE.x), wy(LAKE.y), Math.max(2, LAKE.w * scale), Math.max(2, LAKE.h * scale));
+
   ctx.fillStyle = '#555';
   NUMBERED_STREETS.forEach(s => ctx.fillRect(wx(0), wy(s.y), WORLD_W * scale, Math.max(1, ROAD_W * scale)));
-  NAMED_STREETS.forEach(s => ctx.fillRect(wx(s.x), wy(0), Math.max(1, ROAD_W * scale), WORLD_H * scale));
+  NAMED_STREETS.forEach(s => ctx.fillRect(wx(s.x), wy(0), Math.max(1, ROAD_W * scale), DOWNTOWN_H * scale));
+  ctx.fillStyle = '#8a7355';
+  NORTH_ROADS.forEach(s => ctx.fillRect(wx(s.x), wy(WORLD_TOP), Math.max(1, ROAD_W * scale), (0 - WORLD_TOP) * scale));
+  RIDGE_ROADS.forEach(s => ctx.fillRect(wx(0), wy(s.y), WORLD_W * scale, Math.max(1, ROAD_W * scale)));
+  LOOP_SEGMENTS.forEach(s => {
+    if (s.horizontal) ctx.fillRect(wx(s.x0), wy(s.y), (s.x1 - s.x0) * scale, Math.max(1, ROAD_W * scale));
+    else ctx.fillRect(wx(s.x), wy(Math.min(s.y0, s.y1)), Math.max(1, ROAD_W * scale), Math.abs(s.y1 - s.y0) * scale);
+  });
 
   buildings.forEach(b => {
     ctx.fillStyle = b.roof;
@@ -5094,6 +5927,11 @@ function drawMinimap() {
     ctx.fillText(text, cx, finalY);
     return true;
   }
+
+  placeLabel('River', wx(WORLD_W / 2), wy(RIVER_Y + RIVER_H / 2) + 3, 'bold 9px monospace', 'rgba(220,240,255,0.85)');
+  placeLabel('Widow Creek', wx(WORLD_W / 2), wy(RIVER2_Y + RIVER2_H / 2) + 3, 'bold 9px monospace', 'rgba(220,240,255,0.85)');
+  placeLabel('Lake', wx(LAKE.x + LAKE.w / 2), wy(LAKE.y + LAKE.h / 2), 'bold 9px monospace', 'rgba(220,240,255,0.85)');
+  placeLabel('The Mountains', wx(WORLD_W / 2), wy(WORLD_TOP + (MOUNTAIN_Y - WORLD_TOP) / 2), 'bold 10px monospace', 'rgba(235,240,245,0.85)');
 
   // home gets its own bright outline and bold label, placed first so it
   // always wins any overlap against a regular building name
@@ -5195,6 +6033,11 @@ function drawHUD() {
       active: player.onCar
     });
   }
+  if (player.onBoat) {
+    items.push({ label: 'Paddleboard', sub: 'Paddling', active: true });
+  } else if (player.swimming) {
+    items.push({ label: 'Lake', sub: 'Swimming', active: true });
+  }
   if (player.traits.tattoo && player.traits.tattoo !== 'none') {
     items.push({ label: player.traits.tattoo === 'skull' ? 'Skull Tat' : 'Flower Tat', sub: '', active: false });
   }
@@ -5294,10 +6137,9 @@ function bindTapButton(id, fn) {
 
 bindTapButton('talkBtn', pressInteract);
 bindTapButton('gunBtn', toggleGunEquip);
-bindTapButton('motoBtn', toggleMotorcycle);
-bindTapButton('carBtn', toggleCar);
+bindTapButton('motoBtn', toggleVehicle);
 bindTapButton('mapBtn', toggleMap);
-bindTapButton('wheelieBtn', tryWheelie);
+bindTapButton('wheelieBtn', tryJumpOrWheelie);
 
 const SAVE_KEY = 'topdownWalkerSave';
 let lastSaveFlashUntil = 0;
@@ -5309,7 +6151,8 @@ function saveGame() {
     // index into `buildings`, not name - two buildings are both named "House"
     currentBuildingIndex: currentBuilding ? buildings.indexOf(currentBuilding) : -1,
     motorcycleParked,
-    carParked
+    carParked,
+    boatParked
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   lastSaveFlashUntil = performance.now() + 1500;
@@ -5326,6 +6169,7 @@ function resetGameState() {
   currentBuilding = null;
   motorcycleParked = null;
   carParked = null;
+  boatParked = { ...BOAT_SPOT };
   dialogueOpen = false;
   dialogueTree = null;
   dialogueNodeKey = 'start';
@@ -5372,10 +6216,22 @@ function loadGame() {
     player.lying = false;
     player.showering = false;
     player.restSpot = null;
+    // wheelie/jump are all performance.now()-relative timestamps - a
+    // stale one from a previous session reads as "still in the future"
+    // against the fresh session's clock (which restarts near 0), leaving
+    // the bike stuck mid-animation with broken math for a long stretch
+    player.wheelieUntil = 0;
+    player.jumpUntil = 0;
+    player.jumpCooldownUntil = 0;
+    player.jumpTotalMs = 0;
+    player.jumpBoosted = false;
+    player.jumpHeightMult = 1;
     scene = data.scene === 'interior' ? 'interior' : 'outside';
     currentBuilding = (data.currentBuildingIndex >= 0 && buildings[data.currentBuildingIndex]) ? buildings[data.currentBuildingIndex] : null;
     motorcycleParked = data.motorcycleParked || null;
     carParked = data.carParked || null;
+    boatParked = data.boatParked || { ...BOAT_SPOT };
+    player.onBoat = false; // never resume mid-boat-ride - always reload standing at the dock
   } catch (e) {
     console.error('Failed to load save', e);
   }
