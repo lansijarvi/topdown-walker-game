@@ -1824,11 +1824,22 @@ function toggleCar() {
 // the paddleboard - free to hop on near the dock, but it can't leave the
 // water (enforced in tryMoveOutside), so there's no dismount-anywhere
 // risk of it ending up beached in the woods
+// only ever park the boat somewhere actually confirmed to be in the
+// lake - falls back to the dock's mooring spot otherwise, so a bad
+// position (edge-of-lake rounding, a corrupted old save, etc.) can never
+// leave the board sitting on dry land where it'd be stuck for good
+function safeBoatSpot(x, y, facing) {
+  return inLake(x, y) ? { x, y, facing } : { ...BOAT_SPOT };
+}
+
 function toggleBoat() {
   if (dialogueOpen || scene !== 'outside' || player.onMotorcycle || player.onCar) return;
   if (player.onBoat) {
     player.onBoat = false;
-    boatParked = { x: player.x + player.w / 2, y: player.y + player.h, facing: player.facing };
+    // use the player's center, matching the exact point tryMoveOutside
+    // checks for lake confinement - the old bottom-edge point could be
+    // just far enough past the shore to record a bad dismount spot
+    boatParked = safeBoatSpot(player.x + player.w / 2, player.y + player.h / 2, player.facing);
   } else if (boatParked) {
     const dist = Math.hypot(
       (player.x + player.w / 2) - boatParked.x,
@@ -5272,7 +5283,7 @@ function drawOutside() {
       } else if (player.onBoat) {
         drawPaddleboard(px, py, player.facing, player.boatColor);
         drawBloodSpot(player, camX, camY);
-        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, knockedDown: performance.now() < playerHitUntil, moving: player.moving });
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, knockedDown: performance.now() < playerHitUntil, moving: false });
       } else {
         // ramp jump: the bike+rider group hops up and grows slightly
         // (bigger = closer to camera = airborne) while a real shadow stays
@@ -6328,7 +6339,11 @@ function loadGame() {
     currentBuilding = (data.currentBuildingIndex >= 0 && buildings[data.currentBuildingIndex]) ? buildings[data.currentBuildingIndex] : null;
     motorcycleParked = data.motorcycleParked || null;
     carParked = data.carParked || null;
-    boatParked = data.boatParked || { ...BOAT_SPOT };
+    // a save from before this fix (or one written mid-edge-case) could
+    // have the board parked on dry land - re-validate on load too, not
+    // just when freshly parking it
+    const loadedBoatSpot = data.boatParked || BOAT_SPOT;
+    boatParked = safeBoatSpot(loadedBoatSpot.x, loadedBoatSpot.y, loadedBoatSpot.facing);
     player.onBoat = false; // never resume mid-boat-ride - always reload standing at the dock
   } catch (e) {
     console.error('Failed to load save', e);
