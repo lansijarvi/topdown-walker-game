@@ -4931,26 +4931,6 @@ function drawOcean(camX, camY) {
     drawScallopBand(camX, camY, wy, phase + humpW, humpW, humpH, 22, `rgba(120,200,225,${(0.5 + rowSeed * 0.15).toFixed(3)})`);
   }
 
-  // whitewater crashing in right at the shore - soft, faded foam patches
-  // rather than hard-edged blocks, each stretch of beach on its own
-  // rhythm so the surf doesn't surge in all at once
-  for (let wy = OCEAN_Y0; wy < OCEAN_Y1; wy += 50) {
-    const rowSeed = hashNoise(wy, 99);
-    const crashPhase = (t * (0.35 + rowSeed * 0.2) + rowSeed) % 1;
-    const reach = Math.sin(crashPhase * Math.PI) * (BREAKER_WIDTH * 0.5);
-    if (reach <= 4) continue;
-    const alpha = 0.6 * Math.sin(crashPhase * Math.PI);
-    const cx = OCEAN_X1 - reach / 2 - camX, cy = wy - camY;
-    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, reach * 0.7);
-    grad.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
-    grad.addColorStop(0.7, `rgba(255,255,255,${(alpha * 0.5).toFixed(3)})`);
-    grad.addColorStop(1, 'rgba(255,255,255,0)');
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, reach * 0.7, 24, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-
   ctx.restore();
   ctx.restore();
 }
