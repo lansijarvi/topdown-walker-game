@@ -4853,6 +4853,37 @@ function drawLifeguardStand(wx, wy, camX, camY) {
   ctx.fill();
 }
 
+// a single flat, filled scallop band - a row of repeating rounded humps
+// (classic cartoon-wave-border style) rather than a thin wavy line
+// each hump has a long, gently curved back slope (seaward) and a short,
+// sharp, pointy face on the shore side - leaning forward in the same
+// direction the whole pattern drifts, like a wave curling toward the beach
+function waveHumpOffset(wx, phase, humpW, humpH) {
+  const period = humpW;
+  const f = (((wx - phase) % period) + period) % period / period;
+  const peakF = 0.72;
+  if (f < peakF) {
+    return humpH * Math.pow(f / peakF, 1.6);
+  }
+  return humpH * Math.pow((1 - f) / (1 - peakF), 0.5);
+}
+
+function drawScallopBand(camX, camY, y, phase, humpW, humpH, bandH, color) {
+  const left = OCEAN_X0 - humpW * 2;
+  const right = OCEAN_X1 + humpW * 2;
+  ctx.beginPath();
+  for (let wx = left; wx <= right; wx += 6) {
+    const topY = y - waveHumpOffset(wx, phase, humpW, humpH);
+    const px = wx - camX, py = topY - camY;
+    if (wx === left) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.lineTo(right - camX, y + bandH - camY);
+  ctx.lineTo(left - camX, y + bandH - camY);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
 // the ocean, out past the beach - deep blue-green water with wave crests
 // that continuously drift east, rolling in toward the shore
 function drawOcean(camX, camY) {
@@ -4873,41 +4904,54 @@ function drawOcean(camX, camY) {
   ctx.clip();
 
   const t = performance.now() / 1000;
+  const breakerX0 = OCEAN_X1 - BREAKER_WIDTH;
 
-  // long, gently wavy swell lines spread well apart vertically, all
-  // continuously drifting east toward shore - many of them, spanning the
-  // full width of the ocean rather than a grid of little repeated blips,
-  // leaving real open water between them (room enough to eventually surf)
+  // calm open water out past the breakers - just the plain gradient
+  // fill, no shimmer; the waves only start where the whitewater does,
+  // right near shore
+
+  // waves and crashing surf, confined to the breaker zone right at shore
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(breakerX0 - camX, y, OCEAN_X1 - breakerX0, h);
+  ctx.clip();
+
+  // flat, scalloped wave bands - the classic two-tone "cartoon wave"
+  // border look, not thin swell lines: a row of connected humps filled
+  // solid, with a lighter crest layer riding just in front of a darker
+  // back layer, both continuously drifting east toward the shore
   const rowGap = 130;
-  const repeatLen = 500;
+  const humpW = 100, humpH = 22;
+  const repeatLen = humpW * 2;
   for (let wy = OCEAN_Y0 - rowGap; wy < OCEAN_Y1 + rowGap; wy += rowGap) {
     const rowSeed = hashNoise(wy, 0);
-    const speed = 55 + rowSeed * 30;
+    const speed = 45 + rowSeed * 25;
     const phase = (t * speed) % repeatLen;
-    ctx.strokeStyle = `rgba(255,255,255,${(0.18 + rowSeed * 0.1).toFixed(3)})`;
-    ctx.lineWidth = 5;
-    ctx.beginPath();
-    for (let wx = OCEAN_X0 - repeatLen; wx <= OCEAN_X1 + repeatLen; wx += 20) {
-      const drawX = wx + phase;
-      const px = drawX - camX;
-      const py = wy + Math.sin(drawX * 0.006 + wy) * 10 - camY;
-      if (wx === OCEAN_X0 - repeatLen) ctx.moveTo(px, py); else ctx.lineTo(px, py);
-    }
-    ctx.stroke();
+    drawScallopBand(camX, camY, wy + 16, phase, humpW, humpH * 0.85, 30, `rgba(20,80,110,${(0.55 + rowSeed * 0.15).toFixed(3)})`);
+    drawScallopBand(camX, camY, wy, phase + humpW, humpW, humpH, 22, `rgba(120,200,225,${(0.5 + rowSeed * 0.15).toFixed(3)})`);
   }
 
-  // whitewater crashing in right at the shore - each stretch of beach on
-  // its own rhythm so the surf doesn't surge in all at once
-  for (let wy = OCEAN_Y0; wy < OCEAN_Y1; wy += 70) {
+  // whitewater crashing in right at the shore - soft, faded foam patches
+  // rather than hard-edged blocks, each stretch of beach on its own
+  // rhythm so the surf doesn't surge in all at once
+  for (let wy = OCEAN_Y0; wy < OCEAN_Y1; wy += 50) {
     const rowSeed = hashNoise(wy, 99);
     const crashPhase = (t * (0.35 + rowSeed * 0.2) + rowSeed) % 1;
     const reach = Math.sin(crashPhase * Math.PI) * (BREAKER_WIDTH * 0.5);
-    if (reach <= 2) continue;
-    const alpha = 0.55 * Math.sin(crashPhase * Math.PI);
-    ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
-    ctx.fillRect(OCEAN_X1 - reach - camX, wy - camY, reach + 8, 55);
+    if (reach <= 4) continue;
+    const alpha = 0.6 * Math.sin(crashPhase * Math.PI);
+    const cx = OCEAN_X1 - reach / 2 - camX, cy = wy - camY;
+    const grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, reach * 0.7);
+    grad.addColorStop(0, `rgba(255,255,255,${alpha.toFixed(3)})`);
+    grad.addColorStop(0.7, `rgba(255,255,255,${(alpha * 0.5).toFixed(3)})`);
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, reach * 0.7, 24, 0, 0, Math.PI * 2);
+    ctx.fill();
   }
 
+  ctx.restore();
   ctx.restore();
 }
 
