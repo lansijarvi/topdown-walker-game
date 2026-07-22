@@ -270,7 +270,7 @@
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard), N for the map, X to wheelie/jump.</span>
+  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard/surfboard), N for the map, X to wheelie/jump.</span>
   <div id="trackEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="nameDisplay"></div>
   <div id="infoButtons">
@@ -1574,9 +1574,15 @@ const LIFEGUARD_STANDS = [
 ];
 const lifeguardObstacles = LIFEGUARD_STANDS.map(s => ({ x: s.x - 14, y: s.y - 14, w: 28, h: 28 }));
 
-// how far out from shore the breakers reach - swimming inside this band
-// gets shoved back toward the beach; clear it and it's calm open water
-const BREAKER_WIDTH = 900;
+// how far out from shore the breakers/waves reach - extended back out to
+// half the ocean's width so there's a lot more open water to catch a
+// wave in and a longer ride surfing all the way in to the beach
+const BREAKER_WIDTH = (OCEAN_X1 - OCEAN_X0) / 2;
+
+// shared with waveHumpOffset() so the surfboard can track the exact
+// world position of a real tall wave's crest peak, not an approximation
+const WAVE_PEAK_F = 0.72;
+const WAVE_TALL_MULT = 1.9;
 
 // a handful of farm fields - just tinted, furrow-textured ground
 // patches, purely decorative and walkable like any other ground
@@ -1756,6 +1762,18 @@ const player = {
   onBoat: false,
   boatColor: '#2a8f9a',
   boatSpeed: 2.2,
+  onSurfboard: false,
+  surfboardColor: '#e8722a',
+  surfSpeed: 1.8,
+  // true while auto-riding a caught wave in - ends only once it actually
+  // reaches the shore, not on a fixed timer, so it always carries the
+  // board all the way in regardless of how far out it was caught
+  ridingWave: false,
+  // which real wave (row + specific hump) is being ridden, so the board
+  // can be pinned to that exact crest's peak for the whole ride
+  ridingRowWy: 0,
+  ridingHumpIdx: 0,
+  ridingStartDist: 0, // distance-to-shore at the moment of catching, for the visual lift envelope
   swimming: false
 };
 
@@ -1841,6 +1859,11 @@ let carParked = null; // same idea as motorcycleParked, for the car
 // easy to step onto from the planks without the dock itself being "lake"
 const BOAT_SPOT = { x: LAKE_DOCK.x + LAKE_DOCK.w + 70, y: LAKE_DOCK.y + 60, facing: 'right' };
 let boatParked = { ...BOAT_SPOT };
+
+// a surfboard stuck upright in the sand, just off the beach - free to
+// grab, same no-purchase-needed idea as the paddleboard
+const SURFBOARD_SPOT = { x: OCEAN_X1 - 60, y: 950, facing: 'left' };
+let surfboardParked = { ...SURFBOARD_SPOT };
 let playerHitUntil = 0;    // while set, the player is sprawled on the pavement
 let playerHitPending = false; // waiting to wake up in the hospital
 const HIT_COST = 50;       // hospital bill for getting run over
@@ -1908,6 +1931,11 @@ function safeBoatSpot(x, y, facing) {
   return inLake(x, y) ? { x, y, facing } : { ...BOAT_SPOT };
 }
 
+// same idea as safeBoatSpot, but for the ocean
+function safeSurfSpot(x, y, facing) {
+  return inOcean(x, y) ? { x, y, facing } : { ...SURFBOARD_SPOT };
+}
+
 function toggleBoat() {
   if (dialogueOpen || scene !== 'outside' || player.onMotorcycle || player.onCar) return;
   if (player.onBoat) {
@@ -1935,6 +1963,70 @@ function toggleBoat() {
   }
 }
 
+// same mount/dismount idea as the paddleboard, but confined to the ocean
+// via safeSurfSpot instead of the lake
+function toggleSurfboard() {
+  if (dialogueOpen || scene !== 'outside' || player.onMotorcycle || player.onCar) return;
+  if (player.onSurfboard) {
+    player.onSurfboard = false;
+    surfboardParked = safeSurfSpot(player.x + player.w / 2, player.y + player.h / 2, player.facing);
+    player.ridingWave = false;
+  } else if (surfboardParked) {
+    const dist = Math.hypot(
+      (player.x + player.w / 2) - surfboardParked.x,
+      (player.y + player.h / 2) - surfboardParked.y
+    );
+    if (dist < MOUNT_RADIUS) {
+      player.onSurfboard = true;
+      player.x = surfboardParked.x - player.w / 2;
+      player.y = surfboardParked.y - player.h / 2;
+      player.facing = surfboardParked.facing;
+      surfboardParked = null;
+      player.ridingWave = false;
+    }
+  }
+}
+
+// which ambient wave row (see drawOcean/oceanRowWaveInfo) sits closest
+// to a given world y - shared by the big-wave check and the catch itself
+// so both always agree on exactly the same row
+function nearestOceanRowWy(py) {
+  const rowGap = 130;
+  return (OCEAN_Y0 - rowGap) + Math.round((py - (OCEAN_Y0 - rowGap)) / rowGap) * rowGap;
+}
+
+// is there a tall wave passing directly under the player right now? Uses
+// the exact same per-row wave math drawOcean() renders with (see
+// oceanRowWaveInfo/isBigWaveHump below), so "on a big wave" always means
+// a real tall crest is visibly under the board, never a hidden timer
+function surfboardOnBigWave() {
+  if (!player.onSurfboard) return false;
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  if (!inOcean(px, py)) return false;
+  if (!(OCEAN_X1 - px > 0 && OCEAN_X1 - px < BREAKER_WIDTH)) return false;
+  const info = oceanRowWaveInfo(nearestOceanRowWy(py), performance.now() / 1000);
+  return isBigWaveHump(px, info);
+}
+
+// the catch button (X) while on the surfboard - only does anything if
+// you're actually on a tall wave right now; no penalty for pressing it
+// at the wrong time, just try again on the next tall one. Records which
+// exact hump was caught so update() can pin the board to that same
+// crest's peak for the whole ride - riding the real wave, at its own pace
+function trySurfCatch() {
+  if (!player.onSurfboard || dialogueOpen) return;
+  if (!surfboardOnBigWave()) return;
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  const wy = nearestOceanRowWy(py);
+  const info = oceanRowWaveInfo(wy, performance.now() / 1000);
+  player.ridingRowWy = wy;
+  player.ridingHumpIdx = Math.floor((px - info.phase) / info.humpW);
+  const peakX0 = player.ridingHumpIdx * info.humpW + WAVE_PEAK_F * info.humpW + info.phase;
+  player.ridingStartDist = Math.max(1, OCEAN_X1 - peakX0);
+  player.ridingWave = true;
+  showFlavorMessage('Surfing in!');
+}
+
 // one unified mount/dismount button for every vehicle - car, motorcycle,
 // or paddleboard. Dismounts whichever one you're currently on; otherwise
 // mounts the nearest parked vehicle that's actually in range
@@ -1943,12 +2035,14 @@ function toggleVehicle() {
   if (player.onCar) return toggleCar();
   if (player.onMotorcycle) return toggleMotorcycle();
   if (player.onBoat) return toggleBoat();
+  if (player.onSurfboard) return toggleSurfboard();
 
   const px = player.x + player.w / 2, py = player.y + player.h / 2;
   const candidates = [];
   if (player.hasCar && carParked) candidates.push({ fn: toggleCar, dist: Math.hypot(px - carParked.x, py - carParked.y) });
   if (player.hasMotorcycle && motorcycleParked) candidates.push({ fn: toggleMotorcycle, dist: Math.hypot(px - motorcycleParked.x, py - motorcycleParked.y) });
   if (boatParked) candidates.push({ fn: toggleBoat, dist: Math.hypot(px - boatParked.x, py - boatParked.y) });
+  if (surfboardParked) candidates.push({ fn: toggleSurfboard, dist: Math.hypot(px - surfboardParked.x, py - surfboardParked.y) });
 
   candidates.sort((a, b) => a.dist - b.dist);
   if (candidates.length && candidates[0].dist < MOUNT_RADIUS) candidates[0].fn();
@@ -2267,7 +2361,7 @@ window.addEventListener('keydown', e => {
   // or dismounts whichever one applies
   if (e.key.toLowerCase() === 'm' && !e.repeat) toggleVehicle();
   if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
-  if (e.key.toLowerCase() === 'x' && !e.repeat) tryJumpOrWheelie();
+  if (e.key.toLowerCase() === 'x' && !e.repeat) { tryJumpOrWheelie(); trySurfCatch(); }
   if (e.key.toLowerCase() === 't' && !e.repeat) toggleTrackEditor();
   if (e.key.toLowerCase() === 'c' && !e.repeat && trackEditorOpen) exportTrackRamps();
 });
@@ -2434,6 +2528,7 @@ function tryMoveOutside(dx, dy) {
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
   if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
+  if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.x = next.x;
 
   next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
@@ -2444,6 +2539,7 @@ function tryMoveOutside(dx, dy) {
   }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
   if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
   if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
+  if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.y = next.y;
 }
 
@@ -2823,10 +2919,24 @@ function update(timestamp, dt) {
   // in the lake or the ocean, on foot, and not already in some other
   // vehicle - swimming slows you down and is the one case where the
   // water doesn't block movement
-  player.swimming = scene === 'outside' && !player.onMotorcycle && !player.onCar && !player.onBoat &&
+  player.swimming = scene === 'outside' && !player.onMotorcycle && !player.onCar && !player.onBoat && !player.onSurfboard &&
     (inLake(player.x + player.w / 2, player.y + player.h / 2) || inOcean(player.x + player.w / 2, player.y + player.h / 2));
 
-  if (player.moving && !player.onCar && !player.onMotorcycle && !player.onBoat && timestamp > (player.nextFootstepAt || 0)) {
+  // body surfing: swimming shoreward (toward the beach) while still inside
+  // the breakers catches the wave and carries you in a lot faster, on top
+  // of/instead of the ambient pushback the breakers already apply
+  const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
+  const inOceanBreakers = inOcean(pcx, pcy) && OCEAN_X1 - pcx > 0 && OCEAN_X1 - pcx < BREAKER_WIDTH;
+  const inBreakers = player.swimming && inOceanBreakers;
+  const bodySurfing = inBreakers && dx > 0;
+
+  // catching a tall wave (X while surfboardOnBigWave() is true) pins the
+  // board to that exact real wave's crest peak and rides along with it -
+  // handled just after the normal movement is applied below
+  const catchingWave = player.onSurfboard && player.ridingWave;
+  if (catchingWave) { dx = 0; dy = 0; }
+
+  if (player.moving && !player.onCar && !player.onMotorcycle && !player.onBoat && !player.onSurfboard && timestamp > (player.nextFootstepAt || 0)) {
     playFootstep();
     player.nextFootstepAt = timestamp + (keys['shift'] ? 220 : 340);
   }
@@ -2837,8 +2947,10 @@ function update(timestamp, dt) {
     ? (keys['shift'] ? player.motoBoostSpeed : player.motoSpeed)
     : player.onBoat
     ? player.boatSpeed
+    : player.onSurfboard
+    ? player.surfSpeed
     : player.swimming
-    ? player.speed * 0.55
+    ? player.speed * (bodySurfing ? 1.6 : 0.55)
     : (keys['shift'] ? player.runSpeed : player.speed);
 
   // vehicles build up to speed rather than snapping straight to it - walking,
@@ -2867,6 +2979,23 @@ function update(timestamp, dt) {
 
   if (scene === 'outside') {
     if (performance.now() > playerHitUntil) tryMoveOutside(dx * appliedSpeed * dt, dy * appliedSpeed * dt);
+
+    // caught a real wave - pin the board to that exact hump's crest
+    // peak every frame, so it rides in at exactly that wave's own pace
+    // instead of some arbitrary boosted speed. The peak's position is
+    // just the hump's fixed spot in the world plus however far the
+    // wave's own phase has drifted since - the same formula drawOcean()
+    // renders with, so the board always sits right on the real crest
+    if (catchingWave) {
+      const info = oceanRowWaveInfo(player.ridingRowWy, timestamp / 1000);
+      const peakX = player.ridingHumpIdx * info.humpW + WAVE_PEAK_F * info.humpW + info.phase;
+      player.x = peakX - player.w / 2;
+      player.y = player.ridingRowWy - player.h / 2;
+      player.facing = 'right';
+      // the ride ends the moment the wave actually reaches the shore -
+      // no fixed timer, so it always carries the board all the way in
+      if (peakX >= OCEAN_X1) player.ridingWave = false;
+    }
 
     // the breakers - swimming within BREAKER_WIDTH of the shore gets
     // shoved back toward the beach in rolling pulses, strongest right at
@@ -4720,6 +4849,96 @@ function drawPaddleboard(cx, cy, facing, color) {
   ctx.restore();
 }
 
+// a trailing wake behind the board while riding a wave in - stretched
+// white speed-streak lines (for the sense of how fast it's carrying you)
+// plus a plume of small droplets kicked up off the tail, both fading and
+// shrinking with distance, flickering a bit frame to frame for some life
+function drawSurfSpray(px, py, facing, intensity) {
+  if (intensity <= 0) return;
+  const dir = facing === 'right' ? -1 : facing === 'left' ? 1 : 0;
+  const t = performance.now() / 90;
+
+  // long streak lines stretching back from the tail - the classic
+  // "moving fast" cue, strongest right behind the board
+  for (let i = 0; i < 4; i++) {
+    const seed = i * 9.3;
+    const across = (i - 1.5) * 6;
+    const len = 26 + i * 10 + Math.sin(t * 2 + seed) * 6;
+    const startX = px + dir * 6;
+    const startY = py + 4 + across;
+    const endX = startX + dir * len;
+    const alpha = intensity * (0.5 - i * 0.09) * (0.7 + 0.3 * Math.sin(t * 3 + seed));
+    if (alpha <= 0) continue;
+    ctx.strokeStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+    ctx.lineWidth = 2.5 - i * 0.4;
+    ctx.beginPath();
+    ctx.moveTo(startX, startY);
+    ctx.lineTo(endX, startY);
+    ctx.stroke();
+  }
+
+  // a plume of small droplets kicked up off the tail
+  for (let i = 0; i < 6; i++) {
+    const seed = i * 13.7;
+    const spread = 8 + i * 6;
+    const jitterAlong = Math.sin(t + seed) * 4;
+    const jitterAcross = Math.cos(t * 1.4 + seed) * (4 + i);
+    const sx = px + dir * (spread + jitterAlong);
+    const sy = py + 6 - i * 1.4 + jitterAcross;
+    const alpha = intensity * (1 - i / 6) * (0.35 + 0.3 * Math.sin(t * 2 + seed));
+    if (alpha <= 0) continue;
+    ctx.fillStyle = `rgba(255,255,255,${alpha.toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx, sy, 5 - i * 0.5, 3 - i * 0.3, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
+// narrower and more pointed at both ends than the paddleboard - a real
+// surfboard shape rather than a flat-tailed cruiser
+function drawSurfboard(cx, cy, facing, color) {
+  ctx.save();
+  ctx.translate(cx, cy);
+  const angle = facing === 'left' ? Math.PI : facing === 'right' ? 0 : facing === 'up' ? -Math.PI / 2 : Math.PI / 2;
+  ctx.rotate(angle);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
+  ctx.beginPath();
+  ctx.ellipse(-46, 0, 14, 6, 0, 0, Math.PI * 2);
+  ctx.fill();
+
+  // board outline - pointed nose AND tail, narrower than the paddleboard
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(52, 0);
+  ctx.quadraticCurveTo(28, -9, -30, -9);
+  ctx.quadraticCurveTo(-52, -5, -52, 0);
+  ctx.quadraticCurveTo(-52, 5, -30, 9);
+  ctx.quadraticCurveTo(28, 9, 52, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  ctx.fillStyle = shadeColor(color, -20);
+  ctx.beginPath();
+  ctx.moveTo(42, 0);
+  ctx.quadraticCurveTo(22, -5, -24, -5);
+  ctx.quadraticCurveTo(-42, -3, -42, 0);
+  ctx.quadraticCurveTo(-42, 3, -24, 5);
+  ctx.quadraticCurveTo(22, 5, 42, 0);
+  ctx.closePath();
+  ctx.fill();
+
+  // center stringer stripe
+  ctx.strokeStyle = shadeColor(color, 40);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(46, 0);
+  ctx.lineTo(-46, 0);
+  ctx.stroke();
+
+  ctx.restore();
+}
+
 // a dashed dirt trail winding through the woods - purely cosmetic
 function drawHikingTrail(camX, camY) {
   ctx.save();
@@ -4858,24 +5077,60 @@ function drawLifeguardStand(wx, wy, camX, camY) {
 // each hump has a long, gently curved back slope (seaward) and a short,
 // sharp, pointy face on the shore side - leaning forward in the same
 // direction the whole pattern drifts, like a wave curling toward the beach
-function waveHumpOffset(wx, phase, humpW, humpH) {
-  const period = humpW;
-  const f = (((wx - phase) % period) + period) % period / period;
-  const peakF = 0.72;
-  if (f < peakF) {
-    return humpH * Math.pow(f / peakF, 1.6);
-  }
-  return humpH * Math.pow((1 - f) / (1 - peakF), 0.5);
+// every row of waves has its own independent "every N humps is a tall
+// one" pattern (N = 3, 4, or 5, picked from the row's own seed) - rows
+// aren't synced with each other, each just keeps rolling on its own
+function oceanRowWaveInfo(wy, t) {
+  const humpW = 160; // longer waves - more spread out, nicer to surf in on
+  const rowSeed = hashNoise(wy, 0);
+  const speed = 45 + rowSeed * 25;
+  // deliberately NOT wrapped with a modulo - the hump index below needs
+  // to count up smoothly forever, or a fixed spot near shore could end
+  // up permanently skipped by the "every Nth is tall" pattern once the
+  // wrapped phase started re-landing on the same handful of indices
+  const phase = t * speed;
+  const tallEvery = 3 + Math.floor(rowSeed * 3);
+  return { rowSeed, speed, phase, humpW, tallEvery };
 }
 
-function drawScallopBand(camX, camY, y, phase, humpW, humpH, bandH, color) {
+// true if the hump currently sitting at world x wx (for this row's wave
+// info) is one of the tall ones in its own every-N-humps pattern
+function isBigWaveHump(wx, info) {
+  const idx = Math.floor((wx - info.phase) / info.humpW);
+  return ((idx % info.tallEvery) + info.tallEvery) % info.tallEvery === 0;
+}
+
+function waveHumpOffset(wx, phase, humpW, humpH, tallEvery) {
+  const period = humpW;
+  const f = (((wx - phase) % period) + period) % period / period;
+  const peakF = WAVE_PEAK_F;
+  const idx = Math.floor((wx - phase) / period);
+  const isTall = tallEvery && ((idx % tallEvery) + tallEvery) % tallEvery === 0;
+  const amp = isTall ? humpH * WAVE_TALL_MULT : humpH;
+  if (f < peakF) {
+    return amp * Math.pow(f / peakF, 1.6);
+  }
+  return amp * Math.pow((1 - f) / (1 - peakF), 0.5);
+}
+
+function drawScallopBand(camX, camY, y, phase, humpW, humpH, bandH, color, tallEvery, accent) {
   const left = OCEAN_X0 - humpW * 2;
   const right = OCEAN_X1 + humpW * 2;
   ctx.beginPath();
   for (let wx = left; wx <= right; wx += 6) {
-    const topY = y - waveHumpOffset(wx, phase, humpW, humpH);
+    const topY = y - waveHumpOffset(wx, phase, humpW, humpH, tallEvery);
     const px = wx - camX, py = topY - camY;
     if (wx === left) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  // a bright white line traced right along the crest, before the path is
+  // extended into the flat-bottomed fill shape - a foam highlight, only
+  // drawn for the front (lighter) layer so it doesn't double up
+  if (accent) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    ctx.lineWidth = 2.2;
+    ctx.stroke();
+    ctx.restore();
   }
   ctx.lineTo(right - camX, y + bandH - camY);
   ctx.lineTo(left - camX, y + bandH - camY);
@@ -4906,9 +5161,20 @@ function drawOcean(camX, camY) {
   const t = performance.now() / 1000;
   const breakerX0 = OCEAN_X1 - BREAKER_WIDTH;
 
-  // calm open water out past the breakers - just the plain gradient
-  // fill, no shimmer; the waves only start where the whitewater does,
-  // right near shore
+  // calm open water out past the breakers - the same subtle drifting
+  // shimmer the lake uses (small, few, and sized to the water rather than
+  // fixed ovals), not big waves; the waves only start near shore
+  const openW = breakerX0 - OCEAN_X0, openH = OCEAN_Y1 - OCEAN_Y0;
+  const ocx = OCEAN_X0 + openW / 2, ocy = OCEAN_Y0 + openH / 2;
+  for (let i = 0; i < 5; i++) {
+    const phase = t * 0.22 + i * 2.4;
+    const sx = ocx + Math.sin(phase) * openW * 0.4;
+    const sy = ocy + Math.cos(phase * 0.7) * openH * 0.4;
+    ctx.fillStyle = `rgba(255,255,255,${(0.07 + 0.05 * Math.sin(phase * 1.3)).toFixed(3)})`;
+    ctx.beginPath();
+    ctx.ellipse(sx - camX, sy - camY, openW * 0.12, openH * 0.04, phase * 0.3, 0, Math.PI * 2);
+    ctx.fill();
+  }
 
   // waves and crashing surf, confined to the breaker zone right at shore
   ctx.save();
@@ -4919,16 +5185,16 @@ function drawOcean(camX, camY) {
   // flat, scalloped wave bands - the classic two-tone "cartoon wave"
   // border look, not thin swell lines: a row of connected humps filled
   // solid, with a lighter crest layer riding just in front of a darker
-  // back layer, both continuously drifting east toward the shore
+  // back layer, both continuously drifting east toward the shore.
+  // Every so often (independently per row, not synced across rows) one
+  // hump in the sequence is a tall one - that's the one you can surf in on
   const rowGap = 130;
-  const humpW = 100, humpH = 22;
-  const repeatLen = humpW * 2;
+  const humpH = 22;
+
   for (let wy = OCEAN_Y0 - rowGap; wy < OCEAN_Y1 + rowGap; wy += rowGap) {
-    const rowSeed = hashNoise(wy, 0);
-    const speed = 45 + rowSeed * 25;
-    const phase = (t * speed) % repeatLen;
-    drawScallopBand(camX, camY, wy + 16, phase, humpW, humpH * 0.85, 30, `rgba(20,80,110,${(0.55 + rowSeed * 0.15).toFixed(3)})`);
-    drawScallopBand(camX, camY, wy, phase + humpW, humpW, humpH, 22, `rgba(120,200,225,${(0.5 + rowSeed * 0.15).toFixed(3)})`);
+    const info = oceanRowWaveInfo(wy, t);
+    drawScallopBand(camX, camY, wy + 16, info.phase, info.humpW, humpH * 0.85, 30, `rgba(20,80,110,${(0.55 + info.rowSeed * 0.15).toFixed(3)})`, info.tallEvery);
+    drawScallopBand(camX, camY, wy, info.phase, info.humpW, humpH, 22, `rgba(120,200,225,${(0.5 + info.rowSeed * 0.15).toFixed(3)})`, info.tallEvery, true);
   }
 
   ctx.restore();
@@ -5567,6 +5833,7 @@ function drawOutside() {
     ...(carParked ? [{ type: 'parkedcar', obj: carParked, sortY: carParked.y }] : []),
     ...(!player.hasCar ? [{ type: 'parkedcar', obj: CAR_SHOWROOM_SPOT, sortY: CAR_SHOWROOM_SPOT.y }] : []),
     ...(boatParked ? [{ type: 'parkedboat', obj: boatParked, sortY: boatParked.y }] : []),
+    ...(surfboardParked ? [{ type: 'parkedsurfboard', obj: surfboardParked, sortY: surfboardParked.y }] : []),
     ...trafficCars.map(car => ({ type: 'trafficcar', obj: car, sortY: car.y })),
     ...trafficBikes.map(bike => ({ type: 'trafficbike', obj: bike, sortY: bike.y })),
     ...lakeSwimmers.map(w => ({ type: 'lakeswimmer', obj: w, sortY: w.y })),
@@ -5602,6 +5869,8 @@ function drawOutside() {
       drawCar(d.obj.x - camX, d.obj.y - camY, d.obj.facing, d.obj.color, false, nightFactor);
     } else if (d.type === 'parkedboat') {
       drawPaddleboard(d.obj.x - camX, d.obj.y - camY, d.obj.facing, player.boatColor);
+    } else if (d.type === 'parkedsurfboard') {
+      drawSurfboard(d.obj.x - camX, d.obj.y - camY, d.obj.facing, player.surfboardColor);
     } else if (d.type === 'lakeswimmer') {
       const w = d.obj;
       const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
@@ -5632,6 +5901,31 @@ function drawOutside() {
         drawPaddleboard(px, py, player.facing, player.boatColor);
         drawBloodSpot(player, camX, camY);
         drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, knockedDown: performance.now() < playerHitUntil, moving: false });
+      } else if (player.onSurfboard) {
+        // caught a wave: the board is pinned (in update()) to the exact
+        // peak of a real tall wave drawOcean() is already rendering right
+        // there, so lifting the rider up by that same crest's real height
+        // puts them visibly standing on top of the actual wave itself,
+        // not a separate shape drawn underneath them
+        // envelope based on how far along the ride is (by distance
+        // covered, not a fixed timer) so it always eases in at the catch
+        // and back out right as it reaches shore, however long that takes
+        const distLeft = OCEAN_X1 - (player.x + player.w / 2);
+        const rideProgress = player.ridingWave ? 1 - Math.min(1, Math.max(0, distLeft / player.ridingStartDist)) : 0;
+        const waveLift = player.ridingWave ? Math.sin(rideProgress * Math.PI) : 0;
+        const crestHeight = 22 * WAVE_TALL_MULT; // matches the front wave layer's tall-hump amplitude
+        drawBloodSpot(player, camX, camY);
+        if (waveLift > 0) {
+          ctx.save();
+          ctx.translate(px, py);
+          ctx.translate(0, -crestHeight * waveLift);
+          ctx.scale(1 + waveLift * 0.15, 1 + waveLift * 0.15);
+          ctx.translate(-px, -py);
+          drawSurfSpray(px, py, player.facing, waveLift);
+        }
+        drawSurfboard(px, py, player.facing, player.surfboardColor);
+        drawDude(px, py, '#3a6fd8', null, { facing: player.facing, gender: player.gender, hairColor: player.hairColor, hairstyle: player.hairstyle, skinTone: player.skinTone, gunEquipped: player.gunEquipped, knockedDown: performance.now() < playerHitUntil, moving: false });
+        if (waveLift > 0) ctx.restore();
       } else {
         // ramp jump: the bike+rider group hops up and grows slightly
         // (bigger = closer to camera = airborne) while a real shadow stays
@@ -5757,6 +6051,23 @@ function drawOutside() {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
       const hint = '[M] to hop on paddleboard';
+      const hw = ctx.measureText(hint).width;
+      ctx.fillStyle = 'rgba(0,0,0,0.6)';
+      ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
+      ctx.fillStyle = '#fff';
+      ctx.fillText(hint, canvas.width/2, canvas.height - 23);
+    }
+  }
+
+  if (surfboardParked && !player.onSurfboard) {
+    const sdist = Math.hypot(
+      (player.x + player.w / 2) - surfboardParked.x,
+      (player.y + player.h / 2) - surfboardParked.y
+    );
+    if (sdist < MOUNT_RADIUS) {
+      ctx.font = 'bold 13px monospace';
+      ctx.textAlign = 'center';
+      const hint = '[M] to grab surfboard';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -6502,6 +6813,11 @@ function drawHUD() {
   }
   if (player.onBoat) {
     items.push({ label: 'Paddleboard', sub: 'Paddling', active: true });
+  } else if (player.onSurfboard) {
+    const sub = player.ridingWave ? 'Riding in!'
+      : surfboardOnBigWave() ? 'CATCH IT! (X)'
+      : 'Paddling';
+    items.push({ label: 'Surfboard', sub, active: true });
   } else if (player.swimming) {
     items.push({ label: 'Lake', sub: 'Swimming', active: true });
   }
@@ -6606,7 +6922,7 @@ bindTapButton('talkBtn', pressInteract);
 bindTapButton('gunBtn', toggleGunEquip);
 bindTapButton('motoBtn', toggleVehicle);
 bindTapButton('mapBtn', toggleMap);
-bindTapButton('wheelieBtn', tryJumpOrWheelie);
+bindTapButton('wheelieBtn', () => { tryJumpOrWheelie(); trySurfCatch(); });
 
 const SAVE_KEY = 'topdownWalkerSave';
 let lastSaveFlashUntil = 0;
@@ -6619,7 +6935,8 @@ function saveGame() {
     currentBuildingIndex: currentBuilding ? buildings.indexOf(currentBuilding) : -1,
     motorcycleParked,
     carParked,
-    boatParked
+    boatParked,
+    surfboardParked
   };
   localStorage.setItem(SAVE_KEY, JSON.stringify(data));
   lastSaveFlashUntil = performance.now() + 1500;
@@ -6637,6 +6954,7 @@ function resetGameState() {
   motorcycleParked = null;
   carParked = null;
   boatParked = { ...BOAT_SPOT };
+  surfboardParked = { ...SURFBOARD_SPOT };
   dialogueOpen = false;
   dialogueTree = null;
   dialogueNodeKey = 'start';
@@ -6703,6 +7021,10 @@ function loadGame() {
     const loadedBoatSpot = data.boatParked || BOAT_SPOT;
     boatParked = safeBoatSpot(loadedBoatSpot.x, loadedBoatSpot.y, loadedBoatSpot.facing);
     player.onBoat = false; // never resume mid-boat-ride - always reload standing at the dock
+    const loadedSurfSpot = data.surfboardParked || SURFBOARD_SPOT;
+    surfboardParked = safeSurfSpot(loadedSurfSpot.x, loadedSurfSpot.y, loadedSurfSpot.facing);
+    player.onSurfboard = false; // never resume mid-surf - always reload standing on the sand
+    player.ridingWave = false;
   } catch (e) {
     console.error('Failed to load save', e);
   }
