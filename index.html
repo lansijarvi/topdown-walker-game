@@ -1448,7 +1448,10 @@ const river2Obstacles = freeSegments(
 ).map(seg => ({ x: seg.start, y: RIVER2_Y, w: seg.end - seg.start, h: RIVER2_H }));
 
 const lakeObstacle = { x: LAKE.x, y: LAKE.y, w: LAKE.w, h: LAKE.h };
-const mountainObstacle = { x: 0, y: WORLD_TOP, w: WORLD_W, h: MOUNTAIN_Y - WORLD_TOP };
+// spans the full world width (including the farmland/seaside town/ocean
+// extension out west) so the mountains wall off the north edge no matter
+// where you're standing, not just above downtown
+const mountainObstacle = { x: WORLD_LEFT, y: WORLD_TOP, w: WORLD_W - WORLD_LEFT, h: MOUNTAIN_Y - WORLD_TOP };
 // lakeObstacle is handled separately in tryMoveOutside (it only blocks
 // vehicles, not feet or the boat) - the mountain wall blocks everyone
 const wildernessObstacles = [mountainObstacle];
@@ -1559,8 +1562,12 @@ const WEST_ROAD_X0 = -2420; // west end, right at the boardwalk
 // leaving extra open water for a future surfing feature
 const OCEAN_X0 = WORLD_LEFT;
 const OCEAN_X1 = -2700;
-const OCEAN_Y0 = 300;
-const OCEAN_Y1 = 1700;
+// the ocean now runs the full north-south length of the world - up to
+// the same mountain wall that stops you north of downtown, and down to
+// the same southern edge (WORLD_H) downtown itself is bounded by -
+// instead of just a strip along the beach town
+const OCEAN_Y0 = MOUNTAIN_Y;
+const OCEAN_Y1 = WORLD_H;
 
 const BOARDWALK = { x: -2460, y: 500, w: 40, h: 1000 };
 const SHORE = { x: OCEAN_X1, y: OCEAN_Y0, w: BOARDWALK.x - OCEAN_X1, h: OCEAN_Y1 - OCEAN_Y0 };
@@ -5191,7 +5198,12 @@ function drawOcean(camX, camY) {
   const rowGap = 130;
   const humpH = 22;
 
+  // the ocean now runs the full length of the world, so most rows are
+  // off-screen at any given moment - skip drawing those entirely rather
+  // than paying for dozens of invisible wave bands every frame
   for (let wy = OCEAN_Y0 - rowGap; wy < OCEAN_Y1 + rowGap; wy += rowGap) {
+    const rowScreenY = wy - camY;
+    if (rowScreenY < -100 || rowScreenY > canvas.height + 100) continue;
     const info = oceanRowWaveInfo(wy, t);
     drawScallopBand(camX, camY, wy + 16, info.phase, info.humpW, humpH * 0.85, 30, `rgba(20,80,110,${(0.55 + info.rowSeed * 0.15).toFixed(3)})`, info.tallEvery);
     drawScallopBand(camX, camY, wy, info.phase, info.humpW, humpH, 22, `rgba(120,200,225,${(0.5 + info.rowSeed * 0.15).toFixed(3)})`, info.tallEvery, true);
@@ -5209,13 +5221,13 @@ function drawMountainWall(camX, camY) {
   if (top > canvas.height || top + h < 0) return;
 
   ctx.fillStyle = '#5a5a56';
-  ctx.fillRect(0 - camX, top, WORLD_W, h);
+  ctx.fillRect(WORLD_LEFT - camX, top, WORLD_W - WORLD_LEFT, h);
 
   // peaks rise from the near edge (bottom of this band, adjacent to the
   // forest) up and away toward the world's true edge
   const bottom = top + h;
   const peakGap = 260;
-  for (let px = -100; px < WORLD_W + 100; px += peakGap) {
+  for (let px = WORLD_LEFT - 100; px < WORLD_W + 100; px += peakGap) {
     const wx = px - camX;
     const peakH = 90 + hashNoise(px, MOUNTAIN_Y) * 70;
     ctx.fillStyle = '#4a4a48';
