@@ -272,6 +272,7 @@
 <div id="info">
   <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard/surfboard), N for the map, X to wheelie/jump.</span>
   <div id="trackEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
+  <div id="furnitureEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="nameDisplay"></div>
   <div id="infoButtons">
     <button class="infoBtn" id="newGameBtn">New Game</button>
@@ -1756,6 +1757,12 @@ const player = {
   showering: false,
   restSpot: null,
   homeFurniture: [],
+  // the rug's position/look, customizable via the in-room furniture
+  // editor - defaults match its old fixed spot/color exactly
+  rugX: 60,
+  rugY: 160,
+  rugColor: '#7a3a3a',
+  rugPattern: 'solid',
   motoColor: '#8f2e2e',
   pendingMotoColor: '#8f2e2e',
   motoSpeed: 3.6,
@@ -2084,6 +2091,14 @@ function updateTrackEditorInfo() {
   el.textContent = `TRACK EDITOR (${TRACK_RAMPS.length} ramps): click to add/drag a ramp, scroll to resize, right-click to delete, C to copy the layout, T to exit.`;
 }
 
+function updateFurnitureEditorInfo() {
+  const el = document.getElementById('furnitureEditorInfo');
+  if (!el) return;
+  if (!furnitureEditorOpen) { el.style.display = 'none'; return; }
+  el.style.display = 'block';
+  el.textContent = 'FURNITURE EDITOR: drag the rug to move it, click a swatch to recolor/repattern it, T to exit.';
+}
+
 function findRampNear(wx, wy) {
   let best = -1, bestDist = RAMP_PICK_RADIUS;
   TRACK_RAMPS.forEach((r, i) => {
@@ -2369,7 +2384,7 @@ window.addEventListener('keydown', e => {
   if (e.key.toLowerCase() === 'm' && !e.repeat) toggleVehicle();
   if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
   if (e.key.toLowerCase() === 'x' && !e.repeat) { tryJumpOrWheelie(); trySurfCatch(); }
-  if (e.key.toLowerCase() === 't' && !e.repeat) toggleTrackEditor();
+  if (e.key.toLowerCase() === 't' && !e.repeat) { if (scene === 'outside') toggleTrackEditor(); else toggleFurnitureEditor(); }
   if (e.key.toLowerCase() === 'c' && !e.repeat && trackEditorOpen) exportTrackRamps();
 });
 
@@ -2495,6 +2510,9 @@ function exitBuilding() {
   player.lying = false;
   player.showering = false;
   player.restSpot = null;
+  furnitureEditorOpen = false;
+  draggingRug = false;
+  updateFurnitureEditorInfo();
   scene = 'outside';
   currentBuilding = null;
   nearbyNPC = null;
@@ -2566,6 +2584,83 @@ const HOME_FURNITURE_LAYOUT = {
     { x: 170, y: 220, facing: 'down' }
   ]
 };
+
+// the rug's actual, current spot/look - position is player.rugX/rugY
+// (draggable) rather than the fixed HOME_FURNITURE_LAYOUT.rug.x/y, which
+// now only supplies the fixed w/h and the original default position
+function currentRugRect() {
+  return { x: player.rugX, y: player.rugY, w: HOME_FURNITURE_LAYOUT.rug.w, h: HOME_FURNITURE_LAYOUT.rug.h };
+}
+
+// --- furniture editor: drag the rug around your own living room, and
+// pick its color/pattern from a small on-screen palette - same drag
+// pattern as the track editor, just scoped to Home's interior ---
+let furnitureEditorOpen = false;
+let draggingRug = false;
+let rugDragOffsetX = 0, rugDragOffsetY = 0;
+const RUG_COLORS = ['#7a3a3a', '#2f5f8a', '#3a7a4a', '#7a3a7a', '#c2932f', '#5a5a5a', '#1a1a1a', '#c2c2c2'];
+const RUG_PATTERNS = ['solid', 'stripes', 'diamond'];
+
+function toggleFurnitureEditor() {
+  if (dialogueOpen || awaitingName || scene !== 'interior' || !currentBuilding || currentBuilding.name !== 'Home') return;
+  if (!player.homeFurniture.includes('rug')) { showFlavorMessage("You don't have a rug to arrange yet."); return; }
+  furnitureEditorOpen = !furnitureEditorOpen;
+  draggingRug = false;
+}
+
+// same idea as screenToWorld, but for the interior's fixed (non-scrolling)
+// room camera instead of the outdoor world camera
+function screenToRoom(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  const camX = (ROOM_W - canvas.width) / 2, camY = (ROOM_H - canvas.height) / 2;
+  return {
+    x: (clientX - rect.left) * (canvas.width / rect.width) + camX,
+    y: (clientY - rect.top) * (canvas.height / rect.height) + camY
+  };
+}
+
+// screen-space layout for the color/pattern swatches, shared by both the
+// drawing code and the click hit-testing so they can never drift apart
+function getRugPaletteLayout() {
+  const swatchSize = 28, gap = 8, startX = 20, y = 46;
+  const colorSwatches = RUG_COLORS.map((color, i) => ({ color, x: startX + i * (swatchSize + gap), y, w: swatchSize, h: swatchSize }));
+  const patternStartX = startX + RUG_COLORS.length * (swatchSize + gap) + 24;
+  const patternSwatches = RUG_PATTERNS.map((pattern, i) => ({ pattern, x: patternStartX + i * (swatchSize + gap), y, w: swatchSize, h: swatchSize }));
+  return { colorSwatches, patternSwatches };
+}
+
+canvas.addEventListener('pointerdown', e => {
+  if (!furnitureEditorOpen || dialogueOpen) return;
+  const rect = canvas.getBoundingClientRect();
+  const sx = (e.clientX - rect.left) * (canvas.width / rect.width);
+  const sy = (e.clientY - rect.top) * (canvas.height / rect.height);
+  const { colorSwatches, patternSwatches } = getRugPaletteLayout();
+  const hitColor = colorSwatches.find(s => sx >= s.x && sx <= s.x + s.w && sy >= s.y && sy <= s.y + s.h);
+  if (hitColor) { player.rugColor = hitColor.color; return; }
+  const hitPattern = patternSwatches.find(s => sx >= s.x && sx <= s.x + s.w && sy >= s.y && sy <= s.y + s.h);
+  if (hitPattern) { player.rugPattern = hitPattern.pattern; return; }
+
+  const { x: wx, y: wy } = screenToRoom(e.clientX, e.clientY);
+  const r = currentRugRect();
+  if (wx >= r.x && wx <= r.x + r.w && wy >= r.y && wy <= r.y + r.h) {
+    draggingRug = true;
+    rugDragOffsetX = wx - player.rugX;
+    rugDragOffsetY = wy - player.rugY;
+  }
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!furnitureEditorOpen || !draggingRug) return;
+  const { x: wx, y: wy } = screenToRoom(e.clientX, e.clientY);
+  const r = HOME_FURNITURE_LAYOUT.rug;
+  const margin = WALL_THICK;
+  player.rugX = Math.max(margin, Math.min(ROOM_W - margin - r.w, wx - rugDragOffsetX));
+  player.rugY = Math.max(margin, Math.min(ROOM_H - margin - r.h, wy - rugDragOffsetY));
+});
+
+canvas.addEventListener('pointerup', () => {
+  draggingRug = false;
+});
 
 // every home, apartment, and motel room has its own working bathroom - a
 // real walled-off nook in the top-right corner, flush against the room's
@@ -6387,12 +6482,70 @@ function drawBookshelf(rx, ry, b) {
   }
 }
 
-function drawRug(rx, ry, r) {
-  ctx.fillStyle = '#7a3a3a';
-  ctx.fillRect(rx + r.x, ry + r.y, r.w, r.h);
+// fills a rug-shaped rect with a color and one of a few simple patterns -
+// shared by the actual rendered rug and the pattern-picker's swatches
+function drawRugFill(x, y, w, h, color, pattern) {
+  ctx.fillStyle = color;
+  ctx.fillRect(x, y, w, h);
+  if (pattern === 'stripes') {
+    ctx.fillStyle = shadeColor(color, -25);
+    const stripeW = Math.max(4, w / 8);
+    for (let sx = 0; sx < w; sx += stripeW * 2) {
+      ctx.fillRect(x + sx, y, Math.min(stripeW, w - sx), h);
+    }
+  } else if (pattern === 'diamond') {
+    ctx.strokeStyle = shadeColor(color, 35);
+    ctx.lineWidth = Math.max(1, w / 60);
+    const cx = x + w / 2, cy = y + h / 2;
+    ctx.beginPath();
+    ctx.moveTo(cx, y + 2);
+    ctx.lineTo(x + w - 2, cy);
+    ctx.lineTo(cx, y + h - 2);
+    ctx.lineTo(x + 2, cy);
+    ctx.closePath();
+    ctx.stroke();
+  }
+}
+
+function drawRug(rx, ry, r, color, pattern) {
+  drawRugFill(rx + r.x, ry + r.y, r.w, r.h, color, pattern);
   ctx.strokeStyle = '#c2a05f';
   ctx.lineWidth = 3;
   ctx.strokeRect(rx + r.x + 6, ry + r.y + 6, r.w - 12, r.h - 12);
+}
+
+// palette overlay while rearranging the rug - a dashed outline around it
+// plus color/pattern swatches, drawn in screen space over the room
+function drawFurnitureEditorUI(rx, ry) {
+  if (!furnitureEditorOpen) return;
+  const r = currentRugRect();
+  ctx.save();
+  ctx.strokeStyle = draggingRug ? 'rgba(255,255,0,0.9)' : 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.strokeRect(rx + r.x - 3, ry + r.y - 3, r.w + 6, r.h + 6);
+  ctx.restore();
+
+  const { colorSwatches, patternSwatches } = getRugPaletteLayout();
+  ctx.textAlign = 'left';
+  ctx.font = 'bold 11px monospace';
+  ctx.fillStyle = '#fff';
+  ctx.fillText('Rug color', colorSwatches[0].x, colorSwatches[0].y - 6);
+  ctx.fillText('Pattern', patternSwatches[0].x, patternSwatches[0].y - 6);
+
+  colorSwatches.forEach(s => {
+    ctx.fillStyle = s.color;
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+    ctx.strokeStyle = s.color === player.rugColor ? '#ffd27f' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = s.color === player.rugColor ? 3 : 1;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+  });
+  patternSwatches.forEach(s => {
+    drawRugFill(s.x, s.y, s.w, s.h, player.rugColor, s.pattern);
+    ctx.strokeStyle = s.pattern === player.rugPattern ? '#ffd27f' : 'rgba(255,255,255,0.4)';
+    ctx.lineWidth = s.pattern === player.rugPattern ? 3 : 1;
+    ctx.strokeRect(s.x, s.y, s.w, s.h);
+  });
 }
 
 function drawInterior() {
@@ -6476,7 +6629,7 @@ function drawInterior() {
   }
 
   if (currentBuilding.name === 'Home' && player.homeFurniture.includes('rug')) {
-    drawRug(rx, ry, HOME_FURNITURE_LAYOUT.rug);
+    drawRug(rx, ry, currentRugRect(), player.rugColor, player.rugPattern);
   }
   (currentBuilding.tables || []).forEach(t => drawTable(rx, ry, t));
   (currentBuilding.bedRects || []).forEach(b => drawBed(rx, ry, b));
@@ -6541,6 +6694,8 @@ function drawInterior() {
     ctx.restore();
   });
 
+  drawFurnitureEditorUI(rx, ry);
+  updateFurnitureEditorInfo();
   drawDialogueUI();
 }
 
