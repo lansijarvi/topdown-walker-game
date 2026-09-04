@@ -106,6 +106,56 @@
     cursor: pointer;
   }
   #nameSubmitBtn:active { background: rgba(127,255,176,0.35); }
+
+  #tierOverlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.75);
+    z-index: 50;
+    align-items: center;
+    justify-content: center;
+  }
+  #tierOverlay.open { display: flex; }
+  #tierBox {
+    background: rgba(20,20,20,0.95);
+    border: 2px solid #7fffb0;
+    border-radius: 10px;
+    padding: 20px 24px;
+    font-family: monospace;
+    color: #eee;
+    text-align: center;
+    width: min(90vw, 340px);
+  }
+  #tierTitle {
+    font-weight: bold;
+    margin-bottom: 4px;
+  }
+  #tierSubtitle {
+    font-size: 12px;
+    color: #aaa;
+    margin-bottom: 14px;
+  }
+  .tierBtn {
+    display: block;
+    width: 100%;
+    box-sizing: border-box;
+    font-family: monospace;
+    font-weight: bold;
+    font-size: 14px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    border: 2px solid #7fffb0;
+    background: rgba(127,255,176,0.15);
+    color: #7fffb0;
+    cursor: pointer;
+    margin-bottom: 10px;
+    text-align: left;
+  }
+  .tierBtn:last-child { margin-bottom: 0; }
+  .tierBtn:active { background: rgba(127,255,176,0.35); }
+  .tierBtn small { display: block; font-weight: normal; color: #bbb; font-size: 11px; margin-top: 2px; }
+
   #gunControls {
     position: fixed;
     bottom: 130px;
@@ -286,6 +336,16 @@
     <div id="nameTitle">What's your name?</div>
     <input id="nameInput" type="text" maxlength="20" placeholder="Enter a name" autocomplete="off" />
     <button id="nameSubmitBtn">Start</button>
+  </div>
+</div>
+
+<div id="tierOverlay">
+  <div id="tierBox">
+    <div id="tierTitle">How are you starting out?</div>
+    <div id="tierSubtitle">This sets your starting cash.</div>
+    <button class="tierBtn" data-tier="broke">Broke - $500<small>Every dollar counts.</small></button>
+    <button class="tierBtn" data-tier="comfortable">Comfortable - $5,000<small>A decent cushion.</small></button>
+    <button class="tierBtn" data-tier="loaded">Loaded<small>Money's never the problem.</small></button>
   </div>
 </div>
 
@@ -579,7 +639,7 @@ const WORLD_W = 4600;
 // was added - named-street paving, traffic, lamps, and wear/labels all
 // stay capped here so none of that city furniture spills north into the
 // woods (the wilderness lives at y < 0, entirely outside this span)
-const WORLD_H = 4500;
+const WORLD_H = 5000;
 const DOWNTOWN_H = WORLD_H;
 // the world's northern edge, out past the mountains - negative because
 // downtown itself still starts at y = 0, exactly as it always has
@@ -634,12 +694,12 @@ const beerOnlyTree = {
   },
   checkBeer: {
     speaker: 'npc',
-    text: (p) => p.money >= BEER_PRICE ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
-    next: (p) => p.money >= BEER_PRICE ? 'buyBeer' : 'tooExpensive'
+    text: (p) => canAfford(p, BEER_PRICE) ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
+    next: (p) => canAfford(p, BEER_PRICE) ? 'buyBeer' : 'tooExpensive'
   },
   buyBeer: {
     speaker: 'npc', text: "Here's your beer!", end: true,
-    effect: (p) => { p.money -= BEER_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+    effect: (p) => { spendMoney(p, BEER_PRICE); p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
   },
   tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
   noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
@@ -683,21 +743,21 @@ const breeTree = {
   },
   checkBeer: {
     speaker: 'npc',
-    text: (p) => p.money >= BEER_PRICE ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
-    next: (p) => p.money >= BEER_PRICE ? 'buyBeer' : 'tooExpensive'
+    text: (p) => canAfford(p, BEER_PRICE) ? "One beer, coming up." : `That's $${BEER_PRICE}. You're a little short.`,
+    next: (p) => canAfford(p, BEER_PRICE) ? 'buyBeer' : 'tooExpensive'
   },
   buyBeer: {
     speaker: 'npc', text: "Here's your beer!", end: true,
-    effect: (p) => { p.money -= BEER_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+    effect: (p) => { spendMoney(p, BEER_PRICE); p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
   },
   checkShot: {
     speaker: 'npc',
-    text: (p) => p.money >= SHOT_PRICE ? "One shot, coming up." : `That's $${SHOT_PRICE}. You're a little short.`,
-    next: (p) => p.money >= SHOT_PRICE ? 'buyShot' : 'tooExpensive'
+    text: (p) => canAfford(p, SHOT_PRICE) ? "One shot, coming up." : `That's $${SHOT_PRICE}. You're a little short.`,
+    next: (p) => canAfford(p, SHOT_PRICE) ? 'buyShot' : 'tooExpensive'
   },
   buyShot: {
     speaker: 'npc', text: "Here's your shot!", end: true,
-    effect: (p) => { p.money -= SHOT_PRICE; p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
+    effect: (p) => { spendMoney(p, SHOT_PRICE); p.drinksConsumed = (p.drinksConsumed || 0) + 1; }
   },
   tooExpensive: { speaker: 'npc', text: "Come back when you've got more cash.", end: true },
   noThanks: { speaker: 'npc', text: "Let me know if you change your mind.", end: true }
@@ -723,24 +783,54 @@ const HAIR_COLORS = [
 ];
 
 const barberTree = {
+  // gone until the scissors are back - see getStartKey on the barber
+  // NPC entries, which routes here instead of 'start' the whole time
+  scissorsPlea: {
+    speaker: 'npc',
+    text: "Some clown grabbed my good scissors and bolted. Didn't even get a decent tip out of him. Coward. Those aren't just scissors, they're a lifestyle - bring 'em back and I'll owe you one.",
+    options: (p) => p.questItems.barberScissors
+      ? [{ label: 'Here are your scissors', next: 'scissorsReturn' }, { label: 'Not yet', next: 'scissorsBye' }]
+      : [{ label: "I'll keep an eye out", next: 'scissorsBye' }]
+  },
+  scissorsReturn: {
+    speaker: 'npc',
+    text: "You're a lifesaver. Sit down, first trim's on me - assuming you've still got hair after whatever you just did.",
+    end: true,
+    effect: (p) => { p.questItems.barberScissors = false; setQuest(p, 'barberScissors', 'complete'); }
+  },
+  scissorsBye: { speaker: 'npc', text: "Come back if you spot 'em.", end: true },
+  dyeRequest: {
+    speaker: 'npc',
+    text: "Farmland's got a supplier who does this insane 'cherry bomb red' - illegal in three counties, probably. Fetch me a bottle. Don't ask why a farm town sells hair dye. Some questions are better left alone.",
+    options: (p) => p.questItems.barberDye
+      ? [{ label: "Here's the dye", next: 'dyeDeliver' }, { label: 'Still looking', next: 'bye' }]
+      : [{ label: "I'll find it", next: 'bye' }]
+  },
+  dyeDeliver: {
+    speaker: 'npc',
+    text: "Now THIS is chemistry. Somebody's about to have a very good hair day.",
+    end: true,
+    effect: (p) => { p.questItems.barberDye = false; setQuest(p, 'barberDye', 'complete'); }
+  },
   start: {
     speaker: 'npc',
     text: 'Need a haircut?',
-    options: () => [
+    options: (p) => [
       ...HAIRCUTS.map(h => ({ label: `${h.name} - $${HAIRCUT_PRICE}`, next: 'checkCutFunds', hairstyle: h.key })),
+      ...(questComplete(p, 'barberScissors') && !questComplete(p, 'barberDye') ? [{ label: 'Got a second?', next: 'dyeRequest' }] : []),
       { label: 'Just browsing', next: 'bye' }
     ]
   },
   checkCutFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= HAIRCUT_PRICE ? `That'll be $${HAIRCUT_PRICE}.` : `That's $${HAIRCUT_PRICE}. You're a bit short.`,
-    next: (p) => p.money >= HAIRCUT_PRICE ? 'applyCut' : 'tooExpensive'
+    text: (p) => canAfford(p, HAIRCUT_PRICE) ? `That'll be $${HAIRCUT_PRICE}.` : `That's $${HAIRCUT_PRICE}. You're a bit short.`,
+    next: (p) => canAfford(p, HAIRCUT_PRICE) ? 'applyCut' : 'tooExpensive'
   },
   applyCut: {
     speaker: 'npc',
     text: 'There you go, all cut!',
     next: 'colorPrompt',
-    effect: (p) => { p.money -= HAIRCUT_PRICE; p.hairstyle = p.pendingHairstyle; }
+    effect: (p) => { spendMoney(p, HAIRCUT_PRICE); p.hairstyle = p.pendingHairstyle; }
   },
   colorPrompt: {
     speaker: 'npc',
@@ -752,14 +842,14 @@ const barberTree = {
   },
   checkColorFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= HAIR_COLOR_PRICE ? `That's $${HAIR_COLOR_PRICE}.` : `That's $${HAIR_COLOR_PRICE}. You're short on cash - guess it stays natural.`,
-    next: (p) => p.money >= HAIR_COLOR_PRICE ? 'applyColor' : 'bye'
+    text: (p) => canAfford(p, HAIR_COLOR_PRICE) ? `That's $${HAIR_COLOR_PRICE}.` : `That's $${HAIR_COLOR_PRICE}. You're short on cash - guess it stays natural.`,
+    next: (p) => canAfford(p, HAIR_COLOR_PRICE) ? 'applyColor' : 'bye'
   },
   applyColor: {
     speaker: 'npc',
     text: 'Looking sharp!',
     end: true,
-    effect: (p) => { p.money -= HAIR_COLOR_PRICE; p.hairColor = p.pendingHairColor; }
+    effect: (p) => { spendMoney(p, HAIR_COLOR_PRICE); p.hairColor = p.pendingHairColor; }
   },
   tooExpensive: {
     speaker: 'npc', text: 'Come back when you have the cash.', end: true
@@ -789,25 +879,25 @@ const gunStoreTree = {
   },
   checkFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= GUN_PRICE ? `That'll be $${GUN_PRICE}. It's a Glock, comes with one 15-round mag.` : `That's $${GUN_PRICE}. You're short on cash.`,
-    next: (p) => p.money >= GUN_PRICE ? 'purchase' : 'tooExpensive'
+    text: (p) => canAfford(p, GUN_PRICE) ? `That'll be $${GUN_PRICE}. It's a Glock, comes with one 15-round mag.` : `That's $${GUN_PRICE}. You're short on cash.`,
+    next: (p) => canAfford(p, GUN_PRICE) ? 'purchase' : 'tooExpensive'
   },
   purchase: {
     speaker: 'npc',
     text: "Here's your Glock! Press G to draw or holster it, Space to fire, R to reload.",
     end: true,
-    effect: (p) => { p.money -= GUN_PRICE; p.hasGun = true; p.ammoInMag = MAG_SIZE; p.spareMags = 0; }
+    effect: (p) => { spendMoney(p, GUN_PRICE); p.hasGun = true; p.ammoInMag = MAG_SIZE; p.spareMags = 0; }
   },
   checkMagFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= MAG_PRICE ? `That'll be $${MAG_PRICE} for a 15-round mag.` : `That's $${MAG_PRICE}. You're short on cash.`,
-    next: (p) => p.money >= MAG_PRICE ? 'purchaseMag' : 'tooExpensive'
+    text: (p) => canAfford(p, MAG_PRICE) ? `That'll be $${MAG_PRICE} for a 15-round mag.` : `That's $${MAG_PRICE}. You're short on cash.`,
+    next: (p) => canAfford(p, MAG_PRICE) ? 'purchaseMag' : 'tooExpensive'
   },
   purchaseMag: {
     speaker: 'npc',
     text: "Here's a fresh mag. Press R to reload when you're running low.",
     end: true,
-    effect: (p) => { p.money -= MAG_PRICE; p.spareMags += 1; }
+    effect: (p) => { spendMoney(p, MAG_PRICE); p.spareMags += 1; }
   },
   tooExpensive: {
     speaker: 'npc', text: "Come back when you've got the cash.", end: true
@@ -835,8 +925,8 @@ const motoStoreTree = {
   },
   checkFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= MOTO_PRICE ? `That'll be $${MOTO_PRICE}. What color do you want her in?` : `That's $${MOTO_PRICE}. You're short on cash.`,
-    next: (p) => p.money >= MOTO_PRICE ? 'chooseColor' : 'tooExpensive'
+    text: (p) => canAfford(p, MOTO_PRICE) ? `That'll be $${MOTO_PRICE}. What color do you want her in?` : `That's $${MOTO_PRICE}. You're short on cash.`,
+    next: (p) => canAfford(p, MOTO_PRICE) ? 'chooseColor' : 'tooExpensive'
   },
   chooseColor: {
     speaker: 'npc',
@@ -854,7 +944,7 @@ const motoStoreTree = {
     text: "She's all gassed up! Press M to hop on or park it.",
     end: true,
     effect: (p) => {
-      p.money -= MOTO_PRICE;
+      spendMoney(p, MOTO_PRICE);
       p.hasMotorcycle = true;
       motorcycleParked = { ...MOTO_SHOWROOM_SPOT, color: p.pendingMotoColor || '#8f2e2e' };
       p.motoColor = p.pendingMotoColor || '#8f2e2e';
@@ -886,8 +976,8 @@ const carStoreTree = {
   },
   checkFunds: {
     speaker: 'npc',
-    text: (p) => p.money >= CAR_PRICE ? `That'll be $${CAR_PRICE}. What color do you want it in?` : `That's $${CAR_PRICE}. You're short on cash.`,
-    next: (p) => p.money >= CAR_PRICE ? 'chooseColor' : 'tooExpensive'
+    text: (p) => canAfford(p, CAR_PRICE) ? `That'll be $${CAR_PRICE}. What color do you want it in?` : `That's $${CAR_PRICE}. You're short on cash.`,
+    next: (p) => canAfford(p, CAR_PRICE) ? 'chooseColor' : 'tooExpensive'
   },
   chooseColor: {
     speaker: 'npc',
@@ -905,7 +995,7 @@ const carStoreTree = {
     text: "She's all yours! Press C to hop in or park it.",
     end: true,
     effect: (p) => {
-      p.money -= CAR_PRICE;
+      spendMoney(p, CAR_PRICE);
       p.hasCar = true;
       carParked = { ...CAR_SHOWROOM_SPOT, color: p.pendingCarColor || '#8f2e2e' };
       p.carColor = p.pendingCarColor || '#8f2e2e';
@@ -945,11 +1035,11 @@ const furnitureStoreTree = {
     speaker: 'npc',
     text: (p) => {
       const item = FURNITURE_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      return p.money >= item.price ? `That'll be $${item.price} for the ${item.name}.` : `That's $${item.price}. You're short on cash.`;
+      return canAfford(p, item.price) ? `That'll be $${item.price} for the ${item.name}.` : `That's $${item.price}. You're short on cash.`;
     },
     next: (p) => {
       const item = FURNITURE_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      return p.money >= item.price ? 'purchase' : 'tooExpensive';
+      return canAfford(p, item.price) ? 'purchase' : 'tooExpensive';
     }
   },
   purchase: {
@@ -958,7 +1048,7 @@ const furnitureStoreTree = {
     end: true,
     effect: (p) => {
       const item = FURNITURE_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      p.money -= item.price;
+      spendMoney(p, item.price);
       p.homeFurniture.push(item.key);
     }
   },
@@ -995,11 +1085,11 @@ const thriftStoreTree = {
     speaker: 'npc',
     text: (p) => {
       const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      return p.money >= item.price ? `That'll be $${item.price} for the ${item.name}.` : `That's $${item.price}. You're short on cash.`;
+      return canAfford(p, item.price) ? `That'll be $${item.price} for the ${item.name}.` : `That's $${item.price}. You're short on cash.`;
     },
     next: (p) => {
       const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      return p.money >= item.price ? 'purchase' : 'tooExpensive';
+      return canAfford(p, item.price) ? 'purchase' : 'tooExpensive';
     }
   },
   purchase: {
@@ -1008,7 +1098,7 @@ const thriftStoreTree = {
     end: true,
     effect: (p) => {
       const item = THRIFT_ITEMS.find(f => f.key === p.pendingFurnitureItem);
-      p.money -= item.price;
+      spendMoney(p, item.price);
       p.homeFurniture.push(item.key);
     }
   },
@@ -1034,15 +1124,41 @@ const courtTree = {
   },
   checkPay: {
     speaker: 'npc',
-    text: (p) => p.money >= p.finesOwed ? "Paid in full. You're all square with the city." : "You don't have enough to cover it. Come back with the money.",
-    next: (p) => p.money >= p.finesOwed ? 'paid' : 'bye'
+    text: (p) => canAfford(p, p.finesOwed) ? "Paid in full. You're all square with the city." : "You don't have enough to cover it. Come back with the money.",
+    next: (p) => canAfford(p, p.finesOwed) ? 'paid' : 'bye'
   },
   paid: {
     speaker: 'npc', text: "Try to use the crosswalks next time.", end: true,
-    effect: (p) => { p.money -= p.finesOwed; p.finesOwed = 0; }
+    effect: (p) => { spendMoney(p, p.finesOwed); p.finesOwed = 0; }
   },
   later: { speaker: 'npc', text: "It's not going anywhere. Neither are you, legally speaking.", end: true },
   bye: { speaker: 'npc', text: "Next!", end: true }
+};
+
+const BRIBE_PRICE_PER_HEAT = 100;
+const bribeTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => p.wanted > 0
+      ? `You've got a file building up, friend. I could lose some of that paperwork. For a price. A generous price. That's $${p.wanted * BRIBE_PRICE_PER_HEAT}.`
+      : "Clean record, far as I can see. Keep it that way.",
+    options: (p) => p.wanted > 0
+      ? [{ label: 'Pay up', next: 'checkBribe' }, { label: 'Not today', next: 'later' }]
+      : [{ label: 'Good to hear', next: 'bye' }]
+  },
+  checkBribe: {
+    speaker: 'npc',
+    text: (p) => canAfford(p, p.wanted * BRIBE_PRICE_PER_HEAT) ? "Clean slate isn't cheap, but neither is a jail cell. Your call." : "Come back when you can actually afford to disappear.",
+    next: (p) => canAfford(p, p.wanted * BRIBE_PRICE_PER_HEAT) ? 'paid' : 'bye'
+  },
+  paid: {
+    speaker: 'npc',
+    text: 'Funny thing about paperwork - it burns real easy. What file?',
+    end: true,
+    effect: (p) => { spendMoney(p, p.wanted * BRIBE_PRICE_PER_HEAT); p.wanted = 0; }
+  },
+  later: { speaker: 'npc', text: "Offer stands. It's not getting cheaper.", end: true },
+  bye: { speaker: 'npc', text: 'Move along.', end: true }
 };
 
 // Jail guard - not much conversation to be had
@@ -1112,20 +1228,67 @@ function settleBlackjack(p) {
   p.bj.outcome = `Dealer wins. You lose $${bet}.`;
 }
 
+const HIGH_ROLLER_PRICE = 1000;
+const HIGH_ROLLER_BETS = [250, 500, 1000];
+const MARKED_DECK_REWARD = 150;
+
 const blackjackTree = {
-  start: { speaker: 'npc', text: "Welcome to the tables. Blackjack, dealer's choice of stakes.", next: 'chooseBet' },
+  start: {
+    speaker: 'npc',
+    text: "Welcome to the tables. Blackjack, dealer's choice of stakes.",
+    options: (p) => [
+      { label: 'Play a hand', next: 'chooseBet' },
+      ...(questComplete(p, 'casinoHighRoller')
+        ? [{ label: 'High-roller table', next: 'chooseBetHighRoller' }]
+        : [{ label: `High-roller room ($${HIGH_ROLLER_PRICE} buy-in)`, next: 'checkHighRollerFunds' }]),
+      ...(questComplete(p, 'casinoMarkedDeck') ? [] : [{ label: "Got a minute? (something's off with this table)", next: 'markedDeckOffer' }]),
+      { label: 'Nothing, thanks', next: 'bye' }
+    ]
+  },
+  checkHighRollerFunds: {
+    speaker: 'npc',
+    text: (p) => canAfford(p, HIGH_ROLLER_PRICE) ? `High-roller room's members only, chief. And by 'members' I mean 'people with money.' That'll be $${HIGH_ROLLER_PRICE}.` : "Come back when your pockets are heavier than your ego.",
+    next: (p) => canAfford(p, HIGH_ROLLER_PRICE) ? 'joinHighRoller' : 'bye'
+  },
+  joinHighRoller: {
+    speaker: 'npc',
+    text: 'Welcome to the big leagues.',
+    next: 'chooseBetHighRoller',
+    effect: (p) => { spendMoney(p, HIGH_ROLLER_PRICE); setQuest(p, 'casinoHighRoller', 'complete'); }
+  },
+  chooseBetHighRoller: {
+    speaker: 'npc',
+    text: 'How much are you betting?',
+    options: (p) => [
+      ...HIGH_ROLLER_BETS.filter(b => canAfford(p, b)).map(b => ({ label: `$${b}`, bet: b, next: 'deal' })),
+      { label: 'Nothing, I\'m out', next: 'bye' }
+    ]
+  },
+  markedDeckOffer: {
+    speaker: 'npc',
+    text: "Somebody's running a cold deck through my table and it ain't me. Bad for business, worse for my nerves. Find that deck, burn it, bury it, I don't care. Just make it disappear.",
+    options: (p) => p.questItems.casinoMarkedDeck
+      ? [{ label: 'Found it - here', next: 'markedDeckDeliver' }, { label: 'Still looking', next: 'bye' }]
+      : [{ label: "I'll find it", next: 'bye' }]
+  },
+  markedDeckDeliver: {
+    speaker: 'npc',
+    text: `Well I'll be. You actually did it. Drinks on the house - the cheap stuff, don't push it. Here's $${MARKED_DECK_REWARD} for the trouble.`,
+    end: true,
+    effect: (p) => { p.questItems.casinoMarkedDeck = false; setQuest(p, 'casinoMarkedDeck', 'complete'); p.money += MARKED_DECK_REWARD; }
+  },
   chooseBet: {
     speaker: 'npc',
     text: "How much are you betting?",
     options: (p) => [
-      ...BLACKJACK_BETS.filter(b => p.money >= b).map(b => ({ label: `$${b}`, bet: b, next: 'deal' })),
+      ...BLACKJACK_BETS.filter(b => canAfford(p, b)).map(b => ({ label: `$${b}`, bet: b, next: 'deal' })),
       { label: 'Nothing, I\'m out', next: 'bye' }
     ]
   },
   deal: {
     speaker: 'npc',
     text: (p) => `You: ${handString(p.bj.playerHand)} (${handTotal(p.bj.playerHand)})  Dealer: ${handString(p.bj.dealerHand, true)}`,
-    effect: (p) => { p.money -= p.bj.bet; },
+    effect: (p) => { spendMoney(p, p.bj.bet); },
     next: (p) => (isBlackjack(p.bj.playerHand) || isBlackjack(p.bj.dealerHand)) ? 'settle' : 'playing'
   },
   playing: {
@@ -1152,7 +1315,7 @@ const blackjackTree = {
     speaker: 'npc',
     text: (p) => p.bj.outcome,
     effect: (p) => { settleBlackjack(p); },
-    next: 'chooseBet'
+    next: (p) => HIGH_ROLLER_BETS.includes(p.bj.bet) ? 'chooseBetHighRoller' : 'chooseBet'
   },
   bye: { speaker: 'npc', text: "Suit yourself. Table's open if you change your mind.", end: true }
 };
@@ -1172,7 +1335,8 @@ const NUMBERED_STREETS = [
   { name: '3rd St', y: 1980 },
   { name: '4th St', y: 2580 },
   { name: '5th St', y: 3600 },
-  { name: '6th St', y: 4060 }
+  { name: '6th St', y: 4060 },
+  { name: '7th St', y: 4520 }
 ];
 const NAMED_STREETS = [
   { name: 'Oak St',   x: 400,  bridge: true },
@@ -1263,9 +1427,115 @@ function bedSet(...spots) {
   };
 }
 
+// --- Peepshow Palace quest web: Dancer Ruby (flagship multi-stage
+// arc), her pimp Ronnie (resolved via the gun, not dialogue), plus
+// Bartender Moe's keg fetch which unlocks Bouncer Duke's vandalism dare ---
+const RUBY_REWARD_WARDROBE = 100;
+const RUBY_REWARD_PAYOFF = 300;
+
+const rubyTree = {
+  metOnce: {
+    speaker: 'npc',
+    text: "Well look what the cat dragged in. You lost, sugar, or are you actually gonna buy a girl a drink? Some jackass ran off with half my wardrobe. You look like the type who owes the universe a good deed.",
+    options: (p) => p.questItems.stripperWardrobe
+      ? [{ label: "I found your clothes", next: 'wardrobeReturn' }, { label: 'Tell me more', next: 'wardrobeAsk' }]
+      : [{ label: 'What happened?', next: 'wardrobeAsk' }, { label: 'Just looking around', next: 'bye' }]
+  },
+  wardrobeAsk: {
+    speaker: 'npc',
+    text: "It's a matching set, honey. I don't do mismatched, it's a whole thing. Check the woods. Guys panic and just start throwing things when they run.",
+    end: true
+  },
+  wardrobeReturn: {
+    speaker: 'npc',
+    text: `Ohhh, my hero. Careful, I might start believing in chivalry again. Tell you what - you're growing on me. Like a rash, but the good kind. Here's $${RUBY_REWARD_WARDROBE} for the trouble.`,
+    end: true,
+    effect: (p) => {
+      p.questItems.stripperWardrobe = false;
+      setQuest(p, 'stripperWardrobe', 'complete');
+      p.affection.ruby = (p.affection.ruby || 0) + 2;
+      p.money += RUBY_REWARD_WARDROBE;
+    }
+  },
+  dyeAsk: {
+    speaker: 'npc',
+    text: "I'm thinking 'cherry bomb red.' The barber's got the good stuff, but he's been holding out on everybody lately. Bring me that dye and I'll remember your name. That's basically a marriage proposal in this town.",
+    next: (p) => questComplete(p, 'barberDye') ? 'dyeReady' : 'dyeWaiting'
+  },
+  dyeWaiting: { speaker: 'npc', text: "Go sweet-talk the barber. I'll be here. I'm always here.", end: true },
+  dyeReady: {
+    speaker: 'npc',
+    text: "You actually got it? You know, most guys just tip and leave. You keep showing up. It's either sweet or a red flag. Don't tell anyone, but you're becoming my favorite mistake.",
+    end: true,
+    effect: (p) => { setQuest(p, 'stripperDye', 'complete'); p.affection.ruby = (p.affection.ruby || 0) + 2; }
+  },
+  pimpReveal: {
+    speaker: 'npc',
+    text: "Look, there's a guy. Ronnie. Calls himself my 'manager.' He's about as legitimate as a three-dollar bill and twice as greasy. If Ronnie disappeared tomorrow, I wouldn't exactly be lighting candles for him.",
+    end: true
+  },
+  payoff: {
+    speaker: 'npc',
+    text: `You did that... for me? Nobody's ever decked a pimp on my behalf before. I think I'm blushing. Or that's the stage lighting. Alright, hotshot. Drinks are on the house. Don't get used to it. Here, take $${RUBY_REWARD_PAYOFF} - Ronnie's, not mine anymore.`,
+    end: true,
+    effect: (p) => { p.money += RUBY_REWARD_PAYOFF; p.affection.ruby = (p.affection.ruby || 0) + 5; setQuest(p, 'stripperPayoffSeen', 'complete'); }
+  },
+  afterglow: { speaker: 'npc', text: 'Drinks are on the house. Try not to make it weird.', end: true },
+  bye: { speaker: 'npc', text: 'Door swings both ways, sugar. Come back anytime.', end: true }
+};
+
+function rubyStartKey(p) {
+  if (questComplete(p, 'stripperPimp')) return questComplete(p, 'stripperPayoffSeen') ? 'afterglow' : 'payoff';
+  if (questComplete(p, 'stripperDye')) return 'pimpReveal';
+  if (questComplete(p, 'stripperWardrobe')) return 'dyeAsk';
+  return 'metOnce';
+}
+
+const ronnieTree = {
+  start: {
+    speaker: 'npc',
+    text: "Whoa, whoa, big spender. She's a business asset, you don't just walk off with the merchandise. You want trouble? I got trouble on speed dial, pal.",
+    end: true
+  }
+};
+
+const moeTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => questComplete(p, 'clubKeg')
+      ? "You're a lifesaver. Well - saved my job, which is basically the same thing."
+      : "We're bone dry and it's karaoke night. You want to see this crowd without beer? I don't. There's a keg sitting across town with our name on it. Literally. I wrote it on there.",
+    options: (p) => questComplete(p, 'clubKeg')
+      ? [{ label: 'No problem', next: 'bye' }]
+      : p.questItems.clubKeg
+        ? [{ label: 'Got your keg right here', next: 'kegDeliver' }, { label: 'Still looking', next: 'bye' }]
+        : [{ label: "I'll find it", next: 'bye' }]
+  },
+  kegDeliver: {
+    speaker: 'npc',
+    text: "Tell the bouncer I sent you. He doesn't trust anybody, but he trusts me, and now he sort of has to trust you.",
+    end: true,
+    effect: (p) => { p.questItems.clubKeg = false; setQuest(p, 'clubKeg', 'complete'); }
+  },
+  bye: { speaker: 'npc', text: 'Cheers.', end: true }
+};
+
+const dukeTree = {
+  start: {
+    speaker: 'npc',
+    text: (p) => questComplete(p, 'clubVandalism')
+      ? "Ha! Beautiful. Poetry. You're alright, new guy. Door's always open for you. Well - the door's always open, but now I won't glare at you."
+      : "See that sign across town? The one for that other 'club'? Embarrassing. Somebody should fix that. I'm not saying commit a crime. I'm saying if that sign happened to fall down, I wouldn't lose sleep.",
+    end: true
+  }
+};
+
 const buildings = [
   {x: 20, y: 220, w: 180, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Tattoo Parlor', floor: '#3a2a2a', npcs: [{name:'Inkwell Ivy', color:'#c25fae', dialogue: ivyTree}]},
-  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [{name:'Barber Bob', color:'#8f8f5f', dialogue: barberTree}, {name:'Barber Betty', color:'#c2905f', dialogue: barberTree}]},
+  {x: 230, y: 220, w: 150, h: 90, wallH: 70, roof: '#5f8fc2', wall: '#3a5f8f', name: 'Barber Shop', floor: '#e0d8c8', npcs: [
+    {name:'Barber Bob', color:'#8f8f5f', dialogue: barberTree, getStartKey: (p) => questComplete(p, 'barberScissors') ? 'start' : 'scissorsPlea'},
+    {name:'Barber Betty', color:'#c2905f', dialogue: barberTree, getStartKey: (p) => questComplete(p, 'barberScissors') ? 'start' : 'scissorsPlea'}
+  ]},
   {x: 570, y: 170, w: 160, h: 110, wallH: 100,roof: '#4a6a8a', wall: '#37506a', name: 'Pharmacy', floor: '#2f3a44', npcs: [{name:'Pharmacist Pat', color:'#8fc25f'}]},
   {x: 2940, y: 220, w: 200, h: 90,  wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Thrift Store', floor: '#3a3a2a', npcs: [{name:'Rummage Ruth', color:'#c2c25f', dialogue: thriftStoreTree}]},
   {x: 3180, y: 220, w: 150, h: 90, wallH: 70, roof: '#9a3b3b', wall: '#7a2e2e', name: 'Motel', floor: '#332f3a', npcs: [{name:'Front Desk Frank', color:'#5fc2a0'}]},
@@ -1319,7 +1589,7 @@ const buildings = [
 
   // --- civic block: police station, courthouse, and jail side by side ---
   {x: 3150, y: 740, w: 200, h: 100, wallH: 80, roof: '#2a3a6a', wall: '#1f2c4f', name: 'Police Station', floor: '#3a3f4a', npcs: [
-    {name:'Officer Ortiz', color:'#2a3a6a'},
+    {name:'Officer Ortiz', color:'#2a3a6a', dialogue: bribeTree},
     {name:'Sergeant Stone', color:'#2a3a6a', gender: 'm', hairstyle: 'square', big: true}
   ]},
   {x: 3370, y: 720, w: 220, h: 110, wallH: 90, roof: '#8a8a7a', wall: '#6f6f5f', name: 'Courthouse', floor: '#d8d0c0', npcs: [
@@ -1361,10 +1631,16 @@ const buildings = [
     ...tableSet(tableAt(100, 165), tableAt(400, 165))},
   {x: 3100, y: 3830, w: 220, h: 100, wallH: 90, roof: '#4a4a42', wall: '#302f2a', name: 'Rustwater Apartments', floor: '#282722', seedy: true, npcs: [{name:'Tenant Rico', color:'#282824', dirty: true}]},
   {x: 3450, y: 3830, w: 200, h: 100, wallH: 70, roof: '#5a3a4a', wall: '#3a2530', name: 'Peepshow Palace', floor: '#241a20', seedy: true, npcs: [
-    {name:'Bouncer Duke', color:'#1a1a1a', gender: 'm', hairstyle: 'bald', big: true, dirty: true},
-    {name:'Dancer Ruby', color:'#c25f5f', bikini: true, bikiniColor: '#c25f5f'},
-    {name:'Bartender Moe', color:'#332a20', dirty: true}
+    {name:'Bouncer Duke', color:'#1a1a1a', gender: 'm', hairstyle: 'bald', big: true, dirty: true, dialogue: dukeTree},
+    {name:'Dancer Ruby', color:'#c25f5f', bikini: true, bikiniColor: '#c25f5f', dialogue: rubyTree, getStartKey: rubyStartKey},
+    {name:'Bartender Moe', color:'#332a20', dirty: true, dialogue: moeTree},
+    {name:'Ronnie', color:'#5a4a3a', gender: 'm', dirty: true, dialogue: ronnieTree}
   ], stage: { x: 150, y: 50, w: 200, h: 110, poleX: 250, poleY: 105 }, bar: { x: 400, y: 150, w: 40, h: 140, orientation: 'vertical' }},
+  // row 3, fronting 7th St - the south side keeps going before it hits
+  // the world's true southern edge instead of stopping dead at 6th St
+  {x: 200,  y: 4290, w: 170, h: 90,  wallH: 60, roof: '#5a4a3a', wall: '#3a2f24', name: "Loan Shark's Office", floor: '#282218', seedy: true, npcs: [{name:'Vinnie the Shark', color:'#3a3228', gender: 'm', dirty: true}]},
+  {x: 900,  y: 4290, w: 150, h: 90,  wallH: 65, roof: '#4a453f', wall: '#2f2b26', name: 'Boarded Rowhouse', floor: '#242220', seedy: true, npcs: [{name:'Squatter Moss', color:'#211f1a', dirty: true}]},
+  {x: 1700, y: 4290, w: 220, h: 100, wallH: 70, roof: '#5a4a3a', wall: '#3a2f24', name: 'Chop Shop', floor: '#28221a', seedy: true, npcs: [{name:'Mechanic Vic', color:'#332a20', gender: 'm', dirty: true}, {name:'Fence Freddy', color:'#282219', gender: 'm', dirty: true}]},
 
   // --- further out still, past the second river - a handful of rustic
   // cabins scattered through the woods, reachable via the Pine/Maple
@@ -1453,9 +1729,16 @@ const lakeObstacle = { x: LAKE.x, y: LAKE.y, w: LAKE.w, h: LAKE.h };
 // extension out west) so the mountains wall off the north edge no matter
 // where you're standing, not just above downtown
 const mountainObstacle = { x: WORLD_LEFT, y: WORLD_TOP, w: WORLD_W - WORLD_LEFT, h: MOUNTAIN_Y - WORLD_TOP };
+// a second mountain wall closing off the far east edge - starts where the
+// north wall's band ends (so the two don't overlap) and runs the rest of
+// the way down to the world's southern edge, an L-shape around downtown
+// and the south side. Well clear of the furthest-east buildings (Vet
+// Clinic's east edge is at x:4270, Cedar St's road ends at x:4040)
+const EAST_MOUNTAIN_DEPTH = 300;
+const eastMountainObstacle = { x: WORLD_W - EAST_MOUNTAIN_DEPTH, y: MOUNTAIN_Y, w: EAST_MOUNTAIN_DEPTH, h: WORLD_H - MOUNTAIN_Y };
 // lakeObstacle is handled separately in tryMoveOutside (it only blocks
-// vehicles, not feet or the boat) - the mountain wall blocks everyone
-const wildernessObstacles = [mountainObstacle];
+// vehicles, not feet or the boat) - the mountain walls block everyone
+const wildernessObstacles = [mountainObstacle, eastMountainObstacle];
 
 // a dirt road running the full width of the world, up near the
 // mountains - Ridge Road
@@ -1537,6 +1820,50 @@ const forestTreeObstacles = FOREST_TREES.map(t => {
   return { x: t.x - r, y: t.y - r, w: r * 2, h: r * 2 };
 });
 
+// --- a second, smaller stretch of woods northwest of downtown, between
+// the farmland/seaside town and the mountains - the same taper the
+// original forest gives downtown, just on the west side of the meridian,
+// where there was previously nothing but bare ground between the coast
+// and the mountain wall ---
+const WEST_FOREST_Y = 500; // near/south edge - clear of the seaside town's northmost buildings (Lighthouse, y:650)
+const WEST_FOREST_DEPTH = WEST_FOREST_Y - MOUNTAIN_Y;
+const LAKE2 = { x: -1900, y: -2400, w: 420, h: 320 };
+const LAKE3 = { x: -900,  y: -900,  w: 380, h: 300 };
+
+const WEST_FOREST_TREES = [];
+{
+  const keepOutZones = [
+    { x: LAKE2.x - 50, y: LAKE2.y - 50, w: LAKE2.w + 100, h: LAKE2.h + 100 },
+    { x: LAKE3.x - 50, y: LAKE3.y - 50, w: LAKE3.w + 100, h: LAKE3.h + 100 }
+  ];
+  // x stays east of the boardwalk/shore (so nothing spawns in the ocean)
+  // and west of the meridian (so it doesn't overlap downtown's own forest)
+  const WEST_FOREST_X0 = -2400, WEST_FOREST_X1 = -60;
+  let attempts = 0;
+  while (WEST_FOREST_TREES.length < 60 && attempts < 1000) {
+    attempts++;
+    const x = WEST_FOREST_X0 + Math.random() * (WEST_FOREST_X1 - WEST_FOREST_X0);
+    const y = MOUNTAIN_Y + 60 + Math.random() * (WEST_FOREST_DEPTH - 160);
+    if (keepOutZones.some(z => x > z.x && x < z.x + z.w && y > z.y && y < z.y + z.h)) continue;
+    WEST_FOREST_TREES.push({ x, y, pine: true, scale: 0.9 + Math.random() * 0.6 });
+  }
+}
+const westForestTreeObstacles = WEST_FOREST_TREES.map(t => {
+  const r = 7 * t.scale;
+  return { x: t.x - r, y: t.y - r, w: r * 2, h: r * 2 };
+});
+
+function inLake2(x, y) {
+  const cx = LAKE2.x + LAKE2.w / 2, cy = LAKE2.y + LAKE2.h / 2;
+  const nx = (x - cx) / (LAKE2.w / 2), ny = (y - cy) / (LAKE2.h / 2);
+  return nx * nx + ny * ny <= 1;
+}
+function inLake3(x, y) {
+  const cx = LAKE3.x + LAKE3.w / 2, cy = LAKE3.y + LAKE3.h / 2;
+  const nx = (x - cx) / (LAKE3.w / 2), ny = (y - cy) / (LAKE3.h / 2);
+  return nx * nx + ny * ny <= 1;
+}
+
 // short sandy spurs off the shore leading down into the water - now
 // extended well past the shoreline so it reads as walking into deep
 // water rather than just dipping a toe in
@@ -1582,10 +1909,41 @@ const LIFEGUARD_STANDS = [
 ];
 const lifeguardObstacles = LIFEGUARD_STANDS.map(s => ({ x: s.x - 14, y: s.y - 14, w: 28, h: 28 }));
 
+// a generic "hidden item spawn zone" - a flat list of world-space quest
+// spots, each either a pickup (walk up, press E, it joins your quest
+// inventory) or an action (walk up, press E, it fires an effect on the
+// spot immediately - no item involved). One system for every quest,
+// future items just add another entry here
+const QUEST_SPOTS = [
+  { id: 'stripperWardrobe', kind: 'pickup', x: 500,  y: -1400, label: "Ruby's Clothes", color: '#c25f5f' },
+  { id: 'barberDye',        kind: 'pickup', x: -190, y: 1320,  label: 'Hair Dye Bottle', color: '#a8342a' },
+  { id: 'barberScissors',   kind: 'pickup', x: 1670, y: 1670,  label: 'Missing Scissors', color: '#9a9a9a' },
+  { id: 'clubKeg',          kind: 'pickup', x: 3040, y: 1785,  label: 'Beer Keg', color: '#8a5a2a' },
+  { id: 'casinoMarkedDeck', kind: 'pickup', x: 1660, y: 800,   label: 'Marked Deck', color: '#2a2a2a' },
+  {
+    id: 'clubVandalism', kind: 'action', x: 1385, y: 950, label: 'Rival Sign', color: '#7a7a7a',
+    // only worth showing/triggering once the keg quest has opened it up
+    available: (p) => questComplete(p, 'clubKeg') && !questComplete(p, 'clubVandalism'),
+    effect: (p) => { setQuest(p, 'clubVandalism', 'complete'); p.wanted += 1; showFlavorMessage('You knock the rival club\'s sign clean off the wall.'); }
+  }
+];
+const QUEST_SPOT_RADIUS = 30;
+
+function questSpotVisible(spot, p) {
+  if (spot.kind === 'pickup') return !p.questItemsFound[spot.id];
+  return spot.available ? spot.available(p) : !questComplete(p, spot.id);
+}
+
 // how far out from shore the breakers/waves reach - extended back out to
 // half the ocean's width so there's a lot more open water to catch a
 // wave in and a longer ride surfing all the way in to the beach
 const BREAKER_WIDTH = (OCEAN_X1 - OCEAN_X0) / 2;
+
+// a riptide band hugging the open-water edge of the ocean, well past the
+// breakers - swimming/surfing out this far gets shoved back toward shore
+// the same way the breakers do, so open water reads as "far out" rather
+// than something you can swim across indefinitely to the world's edge
+const RIPTIDE_WIDTH = 500;
 
 // shared with waveHumpOffset() so the surfboard can track the exact
 // world position of a real tall wave's crest peak, not an approximation
@@ -1642,6 +2000,8 @@ const citizens = [
   { name: 'Wanderer Wade',     homeX: 2800, homeY: 4050, x: 2800, y: 4050, color: '#2a2722', dirty: true },
   { name: 'Pawnshop Pauly',    homeX: 3600, homeY: 4210, x: 3600, y: 4210, color: '#3a3228', dirty: true },
   { name: 'Shady Sheila',      homeX: 4200, homeY: 3750, x: 4200, y: 3750, color: '#3a2830', dirty: true },
+  { name: 'Alley Cat Angie',   homeX: 600,  homeY: 4400, x: 600,  y: 4400, color: '#463038', dirty: true },
+  { name: 'Rust Ronnie',       homeX: 2000, homeY: 4400, x: 2000, y: 4400, color: '#302f2a', dirty: true },
 ].map(c => ({
   ...c,
   ...randomPersonStyle(),
@@ -1788,7 +2148,20 @@ const player = {
   ridingRowWy: 0,
   ridingHumpIdx: 0,
   ridingStartDist: 0, // distance-to-shore at the moment of catching, for the visual lift envelope
-  swimming: false
+  swimming: false,
+  // finance tier chosen at new-game start - null until the tier overlay
+  // is answered, then 'broke' | 'comfortable' | 'loaded'
+  financeTier: null,
+  // per-quest progress: { questId: 'not-started' | 'in-progress' | 'complete' }
+  quests: {},
+  // quest items currently being carried: { itemId: true }
+  questItems: {},
+  // quest items ever picked up, so their world spot never respawns
+  questItemsFound: {},
+  // simple per-NPC reputation counters, e.g. affection.ruby
+  affection: {},
+  // wanted/heat stub - a bare number, no chase AI behind it yet
+  wanted: 0
 };
 
 // a pristine snapshot of the starting player, taken before anything can
@@ -1851,6 +2224,7 @@ let nearbySeat = null;
 let nearbyBed = null;
 let nearbyShower = null;
 let nearbyFixture = null;
+let nearbyQuestSpot = null;
 let interactCooldownUntil = 0;
 let flavorMessage = '';
 let flavorMessageUntil = 0;
@@ -1860,6 +2234,7 @@ function showFlavorMessage(text) {
 }
 let dialogueOpen = false;
 let awaitingName = false;
+let awaitingTier = false;
 let dialogueTree = null;
 let dialogueNodeKey = 'start';
 let lastFrameTime = 0;
@@ -2063,7 +2438,7 @@ function toggleVehicle() {
 }
 
 function toggleMap() {
-  if (dialogueOpen || awaitingName) return;
+  if (dialogueOpen || awaitingName || awaitingTier) return;
   mapOpen = !mapOpen;
 }
 
@@ -2075,7 +2450,7 @@ let draggingRampIndex = -1;
 const RAMP_PICK_RADIUS = 45;
 
 function toggleTrackEditor() {
-  if (dialogueOpen || awaitingName) return;
+  if (dialogueOpen || awaitingName || awaitingTier) return;
   trackEditorOpen = !trackEditorOpen;
   draggingRampIndex = -1;
 }
@@ -2311,6 +2686,15 @@ function pressInteract() {
     showFlavorMessage('You hop in the shower. Nice and warm!');
   } else if (nearbyFixture) {
     showFlavorMessage(nearbyFixture.message);
+  } else if (nearbyQuestSpot) {
+    if (nearbyQuestSpot.kind === 'pickup') {
+      player.questItems[nearbyQuestSpot.id] = true;
+      player.questItemsFound[nearbyQuestSpot.id] = true;
+      showFlavorMessage(`Picked up: ${nearbyQuestSpot.label}`);
+    } else if (nearbyQuestSpot.effect) {
+      nearbyQuestSpot.effect(player);
+    }
+    nearbyQuestSpot = null;
   }
   syncDialogueOptionsOverlay();
 }
@@ -2364,11 +2748,11 @@ function syncDialogueOptionsOverlay() {
   }
 }
 
-window.addEventListener('keydown', e => { if (!awaitingName) keys[e.key.toLowerCase()] = true; });
+window.addEventListener('keydown', e => { if (!awaitingName && !awaitingTier) keys[e.key.toLowerCase()] = true; });
 window.addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
 
 window.addEventListener('keydown', e => {
-  if (awaitingName) return;
+  if (awaitingName || awaitingTier) return;
   // toggle-style actions only fire on the actual keypress, not the
   // OS/browser's auto-repeat while the key stays held - otherwise holding
   // one a beat too long rapidly re-triggers it (e.g. mount/dismount the
@@ -2389,7 +2773,7 @@ window.addEventListener('keydown', e => {
 });
 
 window.addEventListener('keydown', e => {
-  if (awaitingName) return;
+  if (awaitingName || awaitingTier) return;
   const key = e.key.toLowerCase();
 
   if (key === 'e') {
@@ -2418,6 +2802,57 @@ function rectsOverlap(a, b) {
          a.x + a.w > b.x &&
          a.y < b.y + b.h &&
          a.y + a.h > b.y;
+}
+
+// central money-gate helpers - every purchase in the game should go
+// through these two instead of checking/mutating p.money directly, so
+// the "Loaded" finance tier can bypass every price gate in one place
+// rather than a giant unlimited number that could overflow/underflow
+function canAfford(p, price) {
+  return p.financeTier === 'loaded' || p.money >= price;
+}
+function spendMoney(p, price) {
+  if (p.financeTier !== 'loaded') p.money -= price;
+}
+
+// quest-flag helpers - a quest id maps to 'not-started' (default,
+// nothing stored yet) | 'in-progress' | 'complete'
+function questState(p, id) {
+  return p.quests[id] || 'not-started';
+}
+function questComplete(p, id) {
+  return p.quests[id] === 'complete';
+}
+function setQuest(p, id, state) {
+  p.quests[id] = state;
+}
+
+// lightweight "!" indicator - a name-keyed lookup of simple predicates
+// reusing the same quest-state checks the dialogue trees already use,
+// rather than duplicating tree logic
+const QUEST_PING_CHECKS = {
+  'Barber Bob':     (p) => !questComplete(p, 'barberScissors') || !questComplete(p, 'barberDye'),
+  'Barber Betty':   (p) => !questComplete(p, 'barberScissors') || !questComplete(p, 'barberDye'),
+  'Dancer Ruby':    (p) => !questComplete(p, 'stripperPimp'),
+  'Bartender Moe':  (p) => !questComplete(p, 'clubKeg'),
+  'Bouncer Duke':   (p) => questComplete(p, 'clubKeg') && !questComplete(p, 'clubVandalism'),
+  'Dealer Deuce':   (p) => !questComplete(p, 'casinoHighRoller') || !questComplete(p, 'casinoMarkedDeck'),
+  'Officer Ortiz':  (p) => p.wanted > 0
+};
+function npcHasQuestPing(n, p) {
+  const check = QUEST_PING_CHECKS[n.name];
+  return check ? check(p) : false;
+}
+function drawQuestPing(x, y) {
+  const bob = Math.sin(performance.now() / 300) * 2;
+  const py = y + bob;
+  ctx.font = 'bold 16px monospace';
+  ctx.textAlign = 'center';
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = 'rgba(0,0,0,0.85)';
+  ctx.strokeText('!', x, py);
+  ctx.fillStyle = '#ffe066';
+  ctx.fillText('!', x, py);
 }
 
 // the lake is drawn as an ellipse inscribed in LAKE's bounding box, so
@@ -2495,6 +2930,7 @@ function enterBuilding(b) {
   nearbyBed = null;
   nearbyShower = null;
   nearbyFixture = null;
+  nearbyQuestSpot = null;
   stopEngine();
   stopAmbientHum();
   playDoorChime();
@@ -2550,8 +2986,8 @@ function tryMoveOutside(dx, dy) {
   let blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || westForestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inLake2(next.x + next.w / 2, next.y + next.h / 2) || inLake3(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
   if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.x = next.x;
@@ -2561,8 +2997,8 @@ function tryMoveOutside(dx, dy) {
   blocked = buildings.some(b => {
     const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
     return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
+  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || westForestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
+  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inLake2(next.x + next.w / 2, next.y + next.h / 2) || inLake3(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
   if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
   if (!blocked) player.y = next.y;
@@ -2602,7 +3038,7 @@ const RUG_COLORS = ['#7a3a3a', '#2f5f8a', '#3a7a4a', '#7a3a7a', '#c2932f', '#5a5
 const RUG_PATTERNS = ['solid', 'stripes', 'diamond'];
 
 function toggleFurnitureEditor() {
-  if (dialogueOpen || awaitingName || scene !== 'interior' || !currentBuilding || currentBuilding.name !== 'Home') return;
+  if (dialogueOpen || awaitingName || awaitingTier || scene !== 'interior' || !currentBuilding || currentBuilding.name !== 'Home') return;
   if (!player.homeFurniture.includes('rug')) { showFlavorMessage("You don't have a rug to arrange yet."); return; }
   furnitureEditorOpen = !furnitureEditorOpen;
   draggingRug = false;
@@ -2920,12 +3356,20 @@ function resolveBulletHits(npcList, sceneName) {
     if (hitIdx === -1) return true;
     const n = npcList[hitIdx];
     applyImpact(n, b.vx, b.vy, 3.4);
+    // Ronnie's confrontation only resolves via the gun, never dialogue -
+    // and only once the stripper arc has actually reached him and the
+    // marked deck (his cheating evidence) has been dealt with
+    if (n.name === 'Ronnie' && questComplete(player, 'stripperDye') && questComplete(player, 'casinoMarkedDeck') && !questComplete(player, 'stripperPimp')) {
+      setQuest(player, 'stripperPimp', 'complete');
+      player.wanted += 2;
+      showFlavorMessage("This ain't over - okay, it's over, it's completely over, please don't shoot me again.");
+    }
     return false;
   });
 }
 
 function update(timestamp, dt) {
-  if (dialogueOpen || awaitingName || mapOpen) {
+  if (dialogueOpen || awaitingName || awaitingTier || mapOpen) {
     return;
   }
 
@@ -3022,7 +3466,7 @@ function update(timestamp, dt) {
   // vehicle - swimming slows you down and is the one case where the
   // water doesn't block movement
   player.swimming = scene === 'outside' && !player.onMotorcycle && !player.onCar && !player.onBoat && !player.onSurfboard &&
-    (inLake(player.x + player.w / 2, player.y + player.h / 2) || inOcean(player.x + player.w / 2, player.y + player.h / 2));
+    (inLake(player.x + player.w / 2, player.y + player.h / 2) || inLake2(player.x + player.w / 2, player.y + player.h / 2) || inLake3(player.x + player.w / 2, player.y + player.h / 2) || inOcean(player.x + player.w / 2, player.y + player.h / 2));
 
   // body surfing: swimming shoreward (toward the beach) while still inside
   // the breakers catches the wave and carries you in a lot faster, on top
@@ -3103,7 +3547,7 @@ function update(timestamp, dt) {
     // shoved back toward the beach in rolling pulses, strongest right at
     // the shoreline and fading out the further you push past it; clear
     // the whole band and it's calm, push-free open water
-    if (player.swimming) {
+    if (player.swimming || player.onSurfboard) {
       const pcx = player.x + player.w / 2, pcy = player.y + player.h / 2;
       if (inOcean(pcx, pcy)) {
         const distFromShore = OCEAN_X1 - pcx;
@@ -3114,6 +3558,16 @@ function update(timestamp, dt) {
           const strength = 1 - distFromShore / BREAKER_WIDTH;
           const pulse = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 1.4);
           player.x += pulse * strength * 0.5 * dt;
+        }
+
+        // the riptide - same idea in reverse, out at the far/open-water
+        // edge, so open water reads as "as far out as you'd want to go"
+        // rather than something you can swim clean across to the world edge
+        const distFromWorldEdge = pcx - OCEAN_X0;
+        if (distFromWorldEdge > 0 && distFromWorldEdge < RIPTIDE_WIDTH) {
+          const ripStrength = 1 - distFromWorldEdge / RIPTIDE_WIDTH;
+          const ripPulse = 0.5 + 0.5 * Math.sin(performance.now() / 1000 * 1.1);
+          player.x += ripPulse * ripStrength * 0.5 * dt;
         }
       }
     }
@@ -3129,6 +3583,13 @@ function update(timestamp, dt) {
     nearbyNPC = null;
     const ppx = player.x + player.w / 2;
     const ppy = player.y + player.h / 2;
+
+    nearbyQuestSpot = null;
+    QUEST_SPOTS.forEach(spot => {
+      if (!questSpotVisible(spot, player)) return;
+      if (Math.hypot(spot.x - ppx, spot.y - ppy) < QUEST_SPOT_RADIUS) nearbyQuestSpot = spot;
+    });
+
     citizens.forEach(c => {
       if (c.state === 'inside') return;
       if (c.knockedDownUntil && timestamp < c.knockedDownUntil) return;
@@ -4848,13 +5309,15 @@ function drawTrackRamps(camX, camY) {
 }
 
 // still lake water in the middle of the forest - same shimmering-ellipse
-// treatment as the park pond, just bigger
-function drawLake(camX, camY) {
-  const lx = LAKE.x - camX, ly = LAKE.y - camY;
-  if (lx + LAKE.w < -50 || lx > canvas.width + 50 || ly + LAKE.h < -50 || ly > canvas.height + 50) return;
+// treatment as the park pond, just bigger. Takes a {x,y,w,h} rect so the
+// smaller west-forest lakes can reuse the exact same rendering
+function drawLake(camX, camY, lake) {
+  lake = lake || LAKE;
+  const lx = lake.x - camX, ly = lake.y - camY;
+  if (lx + lake.w < -50 || lx > canvas.width + 50 || ly + lake.h < -50 || ly > canvas.height + 50) return;
 
-  const cx = lx + LAKE.w / 2, cy = ly + LAKE.h / 2;
-  const rx = LAKE.w / 2, ry = LAKE.h / 2;
+  const cx = lx + lake.w / 2, cy = ly + lake.h / 2;
+  const rx = lake.w / 2, ry = lake.h / 2;
   const grad = ctx.createRadialGradient(cx - rx * 0.3, cy - ry * 0.35, 4, cx, cy, Math.max(rx, ry));
   grad.addColorStop(0, '#5b93c2');
   grad.addColorStop(0.55, '#33708f');
@@ -5174,6 +5637,36 @@ function drawLifeguardStand(wx, wy, camX, camY) {
   ctx.fill();
 }
 
+// a quest pickup/action spot - a small gently-bobbing pouch with a
+// glowing outline so it reads as interactable, plus a floating label.
+// Deliberately generic (color/label only) so any future quest item can
+// reuse this one draw call instead of a bespoke sprite
+function drawQuestSpot(spot, camX, camY) {
+  const x = spot.x - camX;
+  const bob = Math.sin(performance.now() / 400) * 3;
+  const y = spot.y - camY + bob;
+
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  ctx.beginPath(); ctx.ellipse(x, spot.y - camY + 6, 10, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+  ctx.save();
+  ctx.shadowColor = 'rgba(255,255,150,0.8)';
+  ctx.shadowBlur = 8;
+  ctx.fillStyle = spot.color;
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.roundRect(x - 9, y - 9, 18, 18, 4);
+  ctx.fill();
+  ctx.stroke();
+  ctx.restore();
+
+  ctx.fillStyle = '#fff';
+  ctx.font = 'bold 10px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText(spot.label, x, y - 16);
+}
+
 // a single flat, filled scallop band - a row of repeating rounded humps
 // (classic cartoon-wave-border style) rather than a thin wavy line
 // each hump has a long, gently curved back slope (seaward) and a short,
@@ -5339,6 +5832,41 @@ function drawMountainWall(camX, camY) {
     ctx.moveTo(wx - peakGap * 0.18, bottom - peakH * 0.62 - 60);
     ctx.lineTo(wx, bottom - peakH - 60);
     ctx.lineTo(wx + peakGap * 0.18, bottom - peakH * 0.62 - 60);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
+// same idea as drawMountainWall, rotated 90° - the sheer wall marking the
+// world's eastern edge, peaks rising out from the near edge (adjacent to
+// downtown/the south side) toward the true edge
+function drawMountainWallEast(camX, camY) {
+  const left = (WORLD_W - EAST_MOUNTAIN_DEPTH) - camX;
+  const w = EAST_MOUNTAIN_DEPTH;
+  if (left > canvas.width || left + w < 0) return;
+
+  const top = MOUNTAIN_Y - camY, h = WORLD_H - MOUNTAIN_Y;
+  ctx.fillStyle = '#5a5a56';
+  ctx.fillRect(left, top, w, h);
+
+  const peakGap = 260;
+  for (let py = MOUNTAIN_Y - 100; py < WORLD_H + 100; py += peakGap) {
+    const wy = py - camY;
+    const peakW = 90 + hashNoise(WORLD_W, py) * 70;
+    ctx.fillStyle = '#4a4a48';
+    ctx.beginPath();
+    ctx.moveTo(left + 60, wy - peakGap * 0.6);
+    ctx.lineTo(left + peakW + 60, wy);
+    ctx.lineTo(left + 60, wy + peakGap * 0.6);
+    ctx.closePath();
+    ctx.fill();
+
+    // snow caps
+    ctx.fillStyle = 'rgba(235,240,245,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(left + peakW * 0.62 + 60, wy - peakGap * 0.18);
+    ctx.lineTo(left + peakW + 60, wy);
+    ctx.lineTo(left + peakW * 0.62 + 60, wy + peakGap * 0.18);
     ctx.closePath();
     ctx.fill();
   }
@@ -5910,6 +6438,8 @@ function drawOutside() {
   drawRiver(camX, camY, RIVER2_Y, RIVER2_H, NORTH_ROADS, 'wood');
   drawParkGround(camX, camY);
   drawLake(camX, camY);
+  drawLake(camX, camY, LAKE2);
+  drawLake(camX, camY, LAKE3);
   drawDock(camX, camY);
   drawShoreAndBoardwalk(camX, camY);
   drawOcean(camX, camY);
@@ -5917,6 +6447,7 @@ function drawOutside() {
   drawLoopTrails(camX, camY);
   drawTrackRamps(camX, camY);
   drawMountainWall(camX, camY);
+  drawMountainWallEast(camX, camY);
 
   const currentPhase = getLightPhase(performance.now());
   TRAFFIC_LIGHTS.forEach(light => {
@@ -5933,7 +6464,9 @@ function drawOutside() {
     ...PARK_TREES.map(t => ({ type: 'tree', obj: t, sortY: PARK.y + t.y })),
     ...CITY_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
     ...FOREST_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
+    ...WEST_FOREST_TREES.map(t => ({ type: 'citytree', obj: t, sortY: t.y })),
     ...LIFEGUARD_STANDS.map(s => ({ type: 'lifeguard', obj: s, sortY: s.y })),
+    ...QUEST_SPOTS.filter(s => questSpotVisible(s, player)).map(s => ({ type: 'questspot', obj: s, sortY: s.y })),
     ...parkWalkers.map(w => ({ type: 'parkwalker', obj: w, sortY: PARK.y + w.y })),
     ...(motorcycleParked ? [{ type: 'parkedmoto', obj: motorcycleParked, sortY: motorcycleParked.y }] : []),
     ...(!player.hasMotorcycle ? [{ type: 'parkedmoto', obj: MOTO_SHOWROOM_SPOT, sortY: MOTO_SHOWROOM_SPOT.y }] : []),
@@ -5965,6 +6498,8 @@ function drawOutside() {
       else drawTree(t.x, t.y, camX, camY, t.scale);
     } else if (d.type === 'lifeguard') {
       drawLifeguardStand(d.obj.x, d.obj.y, camX, camY);
+    } else if (d.type === 'questspot') {
+      drawQuestSpot(d.obj, camX, camY);
     } else if (d.type === 'parkwalker') {
       const w = d.obj;
       const isDown = w.knockedDownUntil && performance.now() < w.knockedDownUntil;
@@ -6675,6 +7210,7 @@ function drawInterior() {
       const isDown = d.obj.knockedDownUntil && performance.now() < d.obj.knockedDownUntil;
       drawBloodSpot(d.obj, -rx, -ry);
       drawDude(rx + d.obj.x, ry + d.obj.y, d.obj.color, d.obj.name, { gender: d.obj.gender, hairColor: d.obj.hairColor, hairstyle: d.obj.hairstyle, skinTone: d.obj.skinTone, kid: d.obj.isKid, big: d.obj.big, skirt: d.obj.skirt, skirtColor: d.obj.skirtColor, bikini: d.obj.bikini, bikiniColor: d.obj.bikiniColor, dirty: d.obj.dirty, knockedDown: isDown, moving: Math.hypot(d.obj.targetX - d.obj.x, d.obj.targetY - d.obj.y) > 2 });
+      if (!isDown && npcHasQuestPing(d.obj, player)) drawQuestPing(rx + d.obj.x, ry + d.obj.y - 42);
     } else if (d.type === 'displaybike') {
       drawMotorcycle(rx + d.obj.x, ry + d.obj.y, d.obj.facing, d.obj.color);
     } else {
@@ -6719,6 +7255,7 @@ function drawDialogueUI() {
     else if (nearbyBed) hint = '[E] to lie down';
     else if (nearbyShower) hint = '[E] to shower';
     else if (nearbyFixture) hint = nearbyFixture.hint;
+    else if (nearbyQuestSpot) hint = nearbyQuestSpot.kind === 'pickup' ? `[E] to pick up ${nearbyQuestSpot.label}` : `[E] to investigate`;
     if (hint) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
@@ -6819,8 +7356,14 @@ function drawMinimap() {
   // mountain ground, tinted distinctly from the city
   ctx.fillStyle = '#354a2c';
   ctx.fillRect(wx(0), wy(MOUNTAIN_Y), WORLD_W * scale, Math.max(2, (FOREST_Y - MOUNTAIN_Y) * scale));
+  // the matching strip of woods on the west side, between the farmland
+  // and the mountains (shallower - it only comes down to WEST_FOREST_Y,
+  // and stops at the shore so it doesn't paint over the ocean fill below)
+  ctx.fillRect(wx(-2400), wy(MOUNTAIN_Y), Math.max(2, 2400 * scale), Math.max(2, (WEST_FOREST_Y - MOUNTAIN_Y) * scale));
   ctx.fillStyle = '#6a6a62';
-  ctx.fillRect(wx(0), wy(WORLD_TOP), WORLD_W * scale, Math.max(2, (MOUNTAIN_Y - WORLD_TOP) * scale));
+  ctx.fillRect(wx(WORLD_LEFT), wy(WORLD_TOP), totalW * scale, Math.max(2, (MOUNTAIN_Y - WORLD_TOP) * scale));
+  // the east mountain wall, closing off the far side of the map
+  ctx.fillRect(wx(WORLD_W - EAST_MOUNTAIN_DEPTH), wy(MOUNTAIN_Y), Math.max(2, EAST_MOUNTAIN_DEPTH * scale), Math.max(2, (WORLD_H - MOUNTAIN_Y) * scale));
 
   ctx.fillStyle = '#2a5a8a';
   ctx.fillRect(wx(0), wy(RIVER_Y), WORLD_W * scale, Math.max(2, RIVER_H * scale));
@@ -6828,6 +7371,8 @@ function drawMinimap() {
   ctx.fillRect(wx(0), wy(RIVER2_Y), WORLD_W * scale, Math.max(2, RIVER2_H * scale));
   ctx.fillStyle = '#33708f';
   ctx.fillRect(wx(LAKE.x), wy(LAKE.y), Math.max(2, LAKE.w * scale), Math.max(2, LAKE.h * scale));
+  ctx.fillRect(wx(LAKE2.x), wy(LAKE2.y), Math.max(2, LAKE2.w * scale), Math.max(2, LAKE2.h * scale));
+  ctx.fillRect(wx(LAKE3.x), wy(LAKE3.y), Math.max(2, LAKE3.w * scale), Math.max(2, LAKE3.h * scale));
 
   ctx.fillStyle = '#555';
   NUMBERED_STREETS.forEach(s => ctx.fillRect(wx(0), wy(s.y), WORLD_W * scale, Math.max(1, ROAD_W * scale)));
@@ -7131,6 +7676,7 @@ function resetGameState() {
   nearbyBed = null;
   nearbyShower = null;
   nearbyFixture = null;
+  nearbyQuestSpot = null;
   interactCooldownUntil = 0;
   playerHitUntil = 0;
   playerHitPending = false;
@@ -7217,6 +7763,10 @@ function submitName() {
   awaitingName = false;
   updateNameDisplay();
   saveGame();
+  // a fresh game (New Game, or first-ever load) has no finance tier yet -
+  // chain straight into that choice. Renaming later never hits this,
+  // since financeTier is already set by then
+  if (!player.financeTier) openTierOverlay();
 }
 
 document.getElementById('nameSubmitBtn').addEventListener('click', submitName);
@@ -7225,6 +7775,25 @@ document.getElementById('nameInput').addEventListener('keydown', e => {
   if (e.key === 'Enter') submitName();
 });
 document.getElementById('renameBtn').addEventListener('click', () => openNameOverlay(player.name));
+
+const TIER_STARTING_MONEY = { broke: 500, comfortable: 5000, loaded: 10000 };
+
+function openTierOverlay() {
+  awaitingTier = true;
+  document.getElementById('tierOverlay').classList.add('open');
+}
+
+function submitTier(tier) {
+  player.financeTier = tier;
+  player.money = TIER_STARTING_MONEY[tier];
+  document.getElementById('tierOverlay').classList.remove('open');
+  awaitingTier = false;
+  saveGame();
+}
+
+document.querySelectorAll('.tierBtn').forEach(btn => {
+  btn.addEventListener('click', () => submitTier(btn.dataset.tier));
+});
 
 const MUTE_KEY = 'topdownWalkerMuted';
 const muteBtn = document.getElementById('muteBtn');
