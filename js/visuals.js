@@ -59,7 +59,7 @@ function makeGroundTile(base, o) {
     const len = (o.bladeLen || 4) * (0.5 + rnd());
     const ang = o.anyAngle ? rnd() * Math.PI * 2 : -Math.PI / 2 + (rnd() - 0.5) * 0.9;
     g.strokeStyle = pickFrom(rnd, o.bladeColors);
-    g.globalAlpha = 0.3 + rnd() * 0.45;
+    g.globalAlpha = 0.15 + rnd() * 0.25;
     g.lineWidth = o.bladeWidth || 1;
     wrap((dx, dy) => {
       g.beginPath(); g.moveTo(x + dx, y + dy);
@@ -83,7 +83,7 @@ function makeGroundTile(base, o) {
   // tiny flower dots
   for (let i = 0; i < (o.flowers || 0); i++) {
     const x = rnd() * S, y = rnd() * S;
-    const col = pickFrom(rnd, ['#f4f1e4', '#f6d955', '#e98bb3', '#b58be0']);
+    const col = pickFrom(rnd, ['#e8e4d6', '#e6d690']);
     wrap((dx, dy) => { g.fillStyle = col; g.fillRect(x + dx, y + dy, 2, 2); });
   }
   return g.createPattern(c, 'repeat');
@@ -100,7 +100,7 @@ function makeMacroTile() {
     const light = rnd() < 0.5;
     for (const dx of [-S, 0, S]) for (const dy of [-S, 0, S]) {
       const grad = g.createRadialGradient(x + dx, y + dy, 0, x + dx, y + dy, r);
-      grad.addColorStop(0, light ? 'rgba(255,255,210,0.07)' : 'rgba(0,20,10,0.09)');
+      grad.addColorStop(0, light ? 'rgba(255,255,210,0.035)' : 'rgba(0,20,10,0.05)');
       grad.addColorStop(1, 'rgba(0,0,0,0)');
       g.fillStyle = grad;
       g.fillRect(x + dx - r, y + dy - r, r * 2, r * 2);
@@ -112,9 +112,9 @@ function makeMacroTile() {
 const GROUND_PATTERNS = {
   rock: makeGroundTile('#6a6a62', { seed: 11, blotches: 40, pebbles: 260, pebbleSize: 3, blades: 120, bladeLen: 3, bladeColors: ['#5a6a4a', '#4a5a3e'] }),
   forest: makeGroundTile('#3a4a2e', { seed: 12, blotches: 70, lightBias: 0.3, blotchColor: 'rgba(70,50,25,0.12)', blades: 1500, bladeLen: 4, anyAngle: true, bladeColors: ['#5a4a2a', '#2c3a22', '#4a5a34', '#6a5a36', '#25301c'], pebbles: 25 }),
-  grass: makeGroundTile('#4a7c3c', { seed: 13, blotches: 60, blades: 1600, bladeLen: 4.5, bladeColors: ['#3a6a2e', '#5c9248', '#2f5a26', '#6aa055', '#447a36'], flowers: 6 }),
-  park: makeGroundTile('#3f7538', { seed: 14, blotches: 60, blades: 1800, bladeLen: 4.5, bladeColors: ['#336a2c', '#579046', '#2a5a24', '#64a052'], flowers: 10 }),
-  country: makeGroundTile('#5a8a4a', { seed: 15, blotches: 60, blades: 1500, bladeLen: 5, bladeColors: ['#4a7a3a', '#6e9e58', '#3e6a30', '#7aac62', '#8a9a4a'], flowers: 18 }),
+  grass: makeGroundTile('#4a7c3c', { seed: 13, blotches: 60, blades: 1600, bladeLen: 4.5, bladeColors: ['#3a6a2e', '#5c9248', '#2f5a26', '#6aa055', '#447a36'], flowers: 0 }),
+  park: makeGroundTile('#3f7538', { seed: 14, blotches: 60, blades: 1800, bladeLen: 4.5, bladeColors: ['#336a2c', '#579046', '#2a5a24', '#64a052'], flowers: 0 }),
+  country: makeGroundTile('#5a8a4a', { seed: 15, blotches: 60, blades: 1500, bladeLen: 5, bladeColors: ['#4a7a3a', '#6e9e58', '#3e6a30', '#7aac62', '#8a9a4a'], flowers: 2 }),
   south: makeGroundTile('#52564a', { seed: 16, blotches: 70, lightBias: 0.3, blotchColor: 'rgba(90,75,50,0.14)', blades: 700, bladeLen: 3.5, bladeColors: ['#6a6a50', '#45493d', '#7a7458', '#5a6044'], pebbles: 60, pebbleColors: ['#6a665a', '#4a4840'] })
 };
 const MACRO_PATTERN = makeMacroTile();
@@ -189,8 +189,8 @@ const DECOR_SPRITES = (() => {
   S.tuftForest = [0, 1, 2].map(() => tuft(['#2a4022', '#3c5a2c', '#4a6a34'], 10));
   S.dryWeed = [0, 1, 2].map(() => tuft(['#8a7a4a', '#6a6040', '#a08a54', '#5a5a3a'], 11));
 
-  S.flowers = ['#f4f1e4', '#f6d955', '#e98bb3', '#b58be0', '#e85a4a', '#7fb0f0'].map(col => makeSprite(26, 20, (g, w, h) => {
-    const n = 4 + Math.floor(rnd() * 4);
+  S.flowers = ['#e8e4d6', '#e6d690', '#c8bcd8'].map(col => makeSprite(26, 20, (g, w, h) => {
+    const n = 2 + Math.floor(rnd() * 3);
     for (let i = 0; i < n; i++) {
       const fx = 5 + rnd() * (w - 10), fy = 5 + rnd() * (h - 10);
       g.strokeStyle = '#3a6a2e'; g.lineWidth = 1;
@@ -233,7 +233,7 @@ const DECOR_SPRITES = (() => {
   S.bushFlower = [bush(11, '#3a6e30'), bush(13, '#2f6230')].map(sp => {
     const g = sp.c.getContext('2d');
     for (let i = 0; i < 9; i++) {
-      g.fillStyle = pickFrom(rnd, ['#f08ab0', '#f4f1e4', '#f6d955']);
+      g.fillStyle = pickFrom(rnd, ['#e8e4d6', '#e6d690']);
       g.beginPath(); g.arc(sp.c.width * (0.25 + rnd() * 0.5), sp.c.height * (0.2 + rnd() * 0.45), 1.6, 0, Math.PI * 2); g.fill();
     }
     return sp;
@@ -335,7 +335,7 @@ const PROP_SPRITES = (() => {
     g.fillStyle = '#3d6e34';
     [[12, 10, 8], [7, 13, 5], [17, 13, 5]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
     g.fillStyle = '#5a9248'; g.beginPath(); g.arc(10, 8, 3.5, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#e86a8a'; [[8, 12], [15, 9], [13, 15]].forEach(([x, y]) => g.fillRect(x, y, 2, 2));
+    
   });
   P.newsbox = makeSprite(14, 20, (g, w, h) => {
     groundShadow(g, w / 2 + 1.5, h - 4, 6, 2, 0.3);
@@ -416,11 +416,11 @@ function addDecor(sprite, x, y, flip) {
   const D = DECOR_SPRITES;
   // [cumulative chance, sprite list] per biome
   const TABLE = {
-    city:    [[0.30, D.tuft], [0.36, D.flowers], [0.39, D.rock], [0.42, D.bush], [0.435, D.bushFlower]],
-    park:    [[0.32, D.tuft], [0.46, D.flowers], [0.48, D.rock], [0.52, D.bush], [0.55, D.bushFlower]],
-    country: [[0.34, D.tuftCountry], [0.48, D.flowers], [0.51, D.rock], [0.54, D.bush], [0.56, D.bushFlower]],
-    forest:  [[0.20, D.tuftForest], [0.33, D.fern], [0.40, D.leaves], [0.45, D.rock], [0.49, D.bushForest], [0.505, D.log], [0.525, D.mushroom]],
-    south:   [[0.22, D.dryWeed], [0.28, D.tuft], [0.32, D.litter], [0.36, D.rock], [0.38, D.bushDry]]
+    city:    [[0.08, D.tuft], [0.09, D.rock], [0.105, D.bush]],
+    park:    [[0.08, D.tuft], [0.095, D.flowers], [0.10, D.rock], [0.12, D.bush]],
+    country: [[0.09, D.tuftCountry], [0.105, D.flowers], [0.115, D.rock], [0.13, D.bush]],
+    forest:  [[0.07, D.tuftForest], [0.12, D.fern], [0.14, D.leaves], [0.16, D.rock], [0.18, D.bushForest], [0.187, D.log], [0.19, D.mushroom]],
+    south:   [[0.07, D.dryWeed], [0.09, D.litter], [0.10, D.rock], [0.11, D.bushDry]]
   };
 
   const STEP = 40;
@@ -449,7 +449,7 @@ function addDecor(sprite, x, y, flip) {
     [s.y - SIDEWALK_W / 2 + 4, s.y + ROAD_W + SIDEWALK_W / 2 + 4].forEach(py => {
       for (let x = 80; x < DOWNTOWN_W - 40; x += 150 + rnd() * 120) {
         if (nearCross(x, NAMED_STREETS) || nearThing(x, py) || inRiver(py)) continue;
-        if (rnd() < 0.3) continue;
+        if (rnd() < 0.65) continue;
         addDecor(pickProp(rnd(), true), x, py, false);
       }
     });
@@ -458,7 +458,7 @@ function addDecor(sprite, x, y, flip) {
     [s.x - SIDEWALK_W / 2, s.x + ROAD_W + SIDEWALK_W / 2].forEach(px => {
       for (let y = 80; y < WORLD_H - 40; y += 150 + rnd() * 120) {
         if (nearCrossY(y, NUMBERED_STREETS) || nearThing(px, y) || inRiver(y)) continue;
-        if (rnd() < 0.3) continue;
+        if (rnd() < 0.65) continue;
         addDecor(pickProp(rnd(), false), px, y, false);
       }
     });

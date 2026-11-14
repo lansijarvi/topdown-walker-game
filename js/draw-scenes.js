@@ -231,6 +231,12 @@ function drawOutside() {
   ctx.fillStyle = vignette;
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
+  drawRideHints();
+  drawDialogueUI();
+}
+
+// "[M] to ride" style prompts when standing next to a parked vehicle
+function drawRideHints() {
   if (motorcycleParked && !player.onMotorcycle) {
     const mdist = Math.hypot(
       (player.x + player.w / 2) - motorcycleParked.x,
@@ -298,8 +304,6 @@ function drawOutside() {
       ctx.fillText(hint, canvas.width/2, canvas.height - 23);
     }
   }
-
-  drawDialogueUI();
 }
 
 function drawTable(rx, ry, t) {
@@ -1134,7 +1138,7 @@ function drawHUD() {
 
 function draw() {
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  if (scene === 'outside') drawOutside();
+  if (scene === 'outside') (ISO_VIEW ? drawOutsideIso : drawOutside)();
   else drawInterior();
   drawHUD();
   if (mapOpen) drawMinimap();
