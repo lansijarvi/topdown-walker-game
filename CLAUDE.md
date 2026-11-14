@@ -1,21 +1,42 @@
 # Topdown Walker Game
 
-Single-file HTML5 canvas top-down game. All game code currently lives in [index.html](index.html) (~2800 lines): styles, HTML overlay controls, and JS game loop are all inline in one file.
+HTML5 canvas top-down game. [index.html](index.html) holds the styles and HTML overlay controls; the game code lives in [js/](js/) as plain (non-module) scripts loaded in order at the end of `<body>`. Hosted on GitHub Pages at www.plastichut.com (see [CNAME](CNAME)).
 
-## Architecture (as of last review)
+## Script layout and load order
 
-- **Rendering**: `draw()` → `drawOutside()` / `drawInterior()` depending on scene, plus `drawHUD()`, `drawDialogueUI()`. Main loop via `loop(timestamp)` → `update(timestamp, dt)` → `draw()`.
-- **World**: outdoor city scene with roads (`drawRoads`), traffic + traffic lights (`trafficLane`, `getLightPhase`, `carShouldStopAtLight`), a park (`drawParkGround`, trees), sidewalks (`buildSidewalkPath`, `randomSidewalkPoint`), and buildings incl. a civic block (police station, courthouse, jail) with interior/exterior transitions (`enterBuilding`, `exitBuilding`, `enterNode`).
-- **Player**: on-foot movement, running, drivable motorcycle (`toggleMotorcycle`, `drawMotorcycle`) and car (`toggleCar`, `drawCar`), gun equip/shoot/reload (`toggleGunEquip`, `shoot`, `reload`), knockback/blood-spot physics (`applyImpact`, `applyKnockbackDecay`, `drawBloodSpot`).
-- **NPCs/dialogue**: branching dialogue system (`pressInteract`, `selectDialogueOption`, `syncDialogueOptionsOverlay`).
-- **Controls**: touch (virtual d-pad + action buttons) and keyboard/mouse, with touch-only controls hidden on desktop.
-- **`old-versions/`**: earlier iterations of the game (`sexy-top.html`, `topdown.html`, `topdown_walker (7).html`) — kept for reference, not part of the live build.
+All scripts share one global scope (top-level `const`/`let`/`function` are visible across files), so **order matters**: code that runs at load time (top-level statements, `const x = fn(...)`) can only call functions from files loaded *earlier*. Calls inside functions/callbacks are fine, since everything is loaded before the game loop starts.
 
-## Planned work
+1. `setup.js` - canvas, resize, touch detection
+2. `audio.js` - WebAudio sound effects, engine/ambient sounds
+3. `config.js` - world/room dimensions
+4. `dialogue.js` - dialogue trees for shops, NPCs, casino/blackjack
+5. `util.js` - pure helpers called during world setup (`hashNoise`, `randomPersonStyle`, `freeSegments`, `pointToSegmentDist`)
+6. `world.js` - roads, river, buildings, park, wilderness/lakes, farmland/ocean, NPC lists, quest spots
+7. `player.js` - player state, shooting, vehicles, editors, input handlers, interact/enter/exit, movement
+8. `interiors.js` - home furniture, bathroom/kitchen/laundry, seats/beds, interior collision
+9. `combat.js` - knockback, blood spots, bullet hits
+10. `update.js` - `update(timestamp, dt)`
+11. `draw-characters.js` - `drawDude`, vehicles, headlights
+12. `draw-world.js` - building exteriors, roads, terrain, water, trees
+13. `traffic.js` - traffic lanes, cars/bikes, lights, day/night, street lamps, camera
+14. `draw-scenes.js` - `drawOutside`, `drawInterior`, furniture, dialogue UI, minimap, HUD, `draw`, `loop`
+15. `visuals.js` - presentation layer: world-anchored ground textures, ~25k scattered decor sprites + street furniture (built once at load, bucketed by 256px cells), building roof/wall/window/door detailing, pre-rendered tree sprites, cloud shadows, light-mapped night (`drawNightLighting`), interior shell/back wall/plants. Purely visual - no collision
+16. `main.js` - button bindings, save/load (`localStorage`), name/tier overlays, startup
 
-- Integrating a Firebase backend (console project not yet created/connected as of 2026-07-06). Likely candidates: Firebase Auth (player accounts), Firestore (save state, world/NPC persistence), Hosting. Scope not yet decided — confirm with user before assuming which Firebase services are in play.
+A new file goes into the `<script>` list in index.html at the right position.
+
+## Architecture
+
+- **Main loop**: `loop(timestamp)` → `update(timestamp, dt)` → `draw()` → `drawOutside()` / `drawInterior()`, `drawHUD()`, `drawDialogueUI()`.
+- **Persistence**: `saveGame`/`loadGame` to `localStorage`, autosaved every 5s + on `beforeunload`.
+- **`old-versions/`**: earlier iterations, kept for reference, not part of the live build.
+
+## Firebase
+
+- Project `westlake--county` (config in [.firebaserc](.firebaserc) / [firebase.json](firebase.json)). Firestore (nam5) and Realtime Database (`westlake--county-default-rtdb`, us-central1) exist, with deny-all rules in [firestore.rules](firestore.rules) / [database.rules.json](database.rules.json). Deploy rules with `firebase deploy --only firestore:rules,database`.
+- Auth: Email/Password + Google enabled, plastichut.com authorized.
+- Planned: sign-in/sign-up with cloud saves, small multiplayer (~5 players) over Realtime Database, NPC "thinking" (local needs/routines plus optional LLM dialogue via a Cloud Function), graphics pass. Firebase Hosting may replace GitHub Pages later (better sign-in reliability, `/api` rewrites to Functions).
 
 ## Working notes
 
-- No build step / bundler / package.json currently exists — it's a static HTML file opened directly or served via a local dev server (e.g. VSCode Live Server).
-- When adding Firebase, decide early whether to keep the single-file structure or split into modules — will affect how the SDK is loaded (script tag vs. npm + bundler).
+- No build step / bundler / package.json - static files opened directly or served via a local dev server (e.g. VSCode Live Server).
