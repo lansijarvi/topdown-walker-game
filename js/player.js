@@ -401,7 +401,7 @@ function findRampNear(wx, wy) {
 function screenToWorld(clientX, clientY) {
   const rect = canvas.getBoundingClientRect();
   if (ISO_VIEW && scene === 'outside') {
-    return isoToWorld((clientX - rect.left) * (canvas.width / rect.width), (clientY - rect.top) * (canvas.height / rect.height));
+    return isoToWorld((clientX - rect.left) * (canvas.width / rect.width) / iso.Z, (clientY - rect.top) * (canvas.height / rect.height) / iso.Z);
   }
   const { camX, camY } = getCamera();
   return {

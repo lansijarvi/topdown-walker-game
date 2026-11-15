@@ -21,8 +21,24 @@ window.addEventListener('keydown', e => {
   showFlavorMessage(ISO_VIEW ? 'Isometric view (V to switch)' : 'Top-down view (V to switch)');
 });
 
-const ISO_K = 0.9;                 // screen px per world unit along each axis
-const iso = { ax: 0, ay: 0, W: 0, H: 0 };
+const ISO_K = 0.9;                 // world units -> logical px along each axis
+const iso = { ax: 0, ay: 0, W: 0, H: 0, Z: 1 };
+
+// camera zoom: auto-fit to the screen size, times a user factor (+ / - keys)
+let isoUserZoom = 1;
+try { isoUserZoom = parseFloat(localStorage.getItem('topdownWalkerZoom')) || 1; } catch (e) {}
+function isoZoom(realW, realH) {
+  const auto = Math.max(0.9, Math.min(2.2, Math.min(realW, realH) / 530));
+  return auto * isoUserZoom;
+}
+window.addEventListener('keydown', e => {
+  if (awaitingName || awaitingTier || dialogueOpen || e.repeat) return;
+  const k = e.key;
+  if (k !== '=' && k !== '+' && k !== '-' && k !== '_') return;
+  isoUserZoom = Math.max(0.6, Math.min(1.8, isoUserZoom * (k === '-' || k === '_' ? 1 / 1.15 : 1.15)));
+  try { localStorage.setItem('topdownWalkerZoom', String(isoUserZoom)); } catch (err) {}
+  showFlavorMessage('Zoom ' + Math.round(isoUserZoom * 100) + '%');
+});
 
 function isoS(x, y, z) {
   const dx = x - iso.ax, dy = y - iso.ay;
@@ -108,10 +124,12 @@ function drawIsoBuilding(b, nightFactor, faded) {
   const K = ISO_K;
   ctx.save();
   if (faded) ctx.globalAlpha = 0.35;
+  ctx.save();
 
   // south face (front-left on screen) - carries the door
   const T = isoS(f.x0, f.y1, H);
-  ctx.setTransform(K, K / 2, 0, 1, T.x - K * f.x0, T.y - (K / 2) * f.x0);
+  ctx.restore(); ctx.save();
+  ctx.transform(K, K / 2, 0, 1, T.x - K * f.x0, T.y - (K / 2) * f.x0);
   ctx.fillStyle = b.wall;
   ctx.fillRect(f.x0, 0, b.w, H);
   drawBuildingWall(px.south, f.x0, 0);
@@ -122,7 +140,8 @@ function drawIsoBuilding(b, nightFactor, faded) {
 
   // east face (front-right on screen), a shade darker
   const E = isoS(f.x1, f.y1, H);
-  ctx.setTransform(K, -K / 2, 0, 1, E.x - K * px.east.x, E.y + (K / 2) * px.east.x);
+  ctx.restore(); ctx.save();
+  ctx.transform(K, -K / 2, 0, 1, E.x - K * px.east.x, E.y + (K / 2) * px.east.x);
   ctx.fillStyle = b.wall;
   ctx.fillRect(px.east.x, 0, D, H);
   drawBuildingWall(px.east, px.east.x, 0);
@@ -134,7 +153,8 @@ function drawIsoBuilding(b, nightFactor, faded) {
 
   // roof, in the ground plane but lifted by H
   const R = isoS(0, f.y0, H);
-  ctx.setTransform(K, K / 2, -K, K / 2, R.x, R.y);
+  ctx.restore(); ctx.save();
+  ctx.transform(K, K / 2, -K, K / 2, R.x, R.y);
   ctx.fillStyle = b.roof;
   ctx.fillRect(f.x0, 0, b.w, D);
   drawBuildingRoof(px.roof, f.x0, 0);
@@ -145,7 +165,7 @@ function drawIsoBuilding(b, nightFactor, faded) {
   ctx.fillRect(f.x0, D - 3, b.w, 3);
   ctx.fillRect(f.x0 + b.w - 3, 0, 3, D);
 
-  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.restore();
 
   // name sign floating over the roof
   if (b.name) {
@@ -201,10 +221,10 @@ function drawIsoBuildingGround(camX, camY, bb) {
 // ---------------------------------------------------------------------
 function drawIsoNightLighting(nightFactor, visibleBuildings) {
   if (nightFactor < 0.03) return;
-  if (!lightCanvas || lightCanvas.width !== iso.W || lightCanvas.height !== iso.H) {
-    [lightCanvas, lightCtx] = makeCanvas(iso.W, iso.H);
+  const W = Math.ceil(iso.W), H = Math.ceil(iso.H);
+  if (!lightCanvas || lightCanvas.width !== W || lightCanvas.height !== H) {
+    [lightCanvas, lightCtx] = makeCanvas(W, H);
   }
-  const W = iso.W, H = iso.H;
   const on = (p, pad) => p.x > -pad && p.x < W + pad && p.y > -pad && p.y < H + pad;
   lightCtx.globalCompositeOperation = 'source-over';
   lightCtx.clearRect(0, 0, W, H);
@@ -268,21 +288,25 @@ function drawIsoNightLighting(nightFactor, visibleBuildings) {
 // The outside scene
 // ---------------------------------------------------------------------
 function drawOutsideIso() {
-  iso.W = canvas.width; iso.H = canvas.height;
+  const realW = canvas.width, realH = canvas.height;
+  iso.Z = isoZoom(realW, realH);
+  iso.W = realW / iso.Z; iso.H = realH / iso.Z;
   iso.ax = player.x + player.w / 2;
   iso.ay = player.y + player.h;
   const now = performance.now();
   const nightFactor = getNightFactor(now);
 
   ctx.fillStyle = '#1e2620';
-  ctx.fillRect(0, 0, iso.W, iso.H);
+  ctx.fillRect(0, 0, realW, realH);
+  ctx.save();
+  ctx.scale(iso.Z, iso.Z);
 
   // ---- ground pass: regular draw functions through the iso transform ----
   const bb = isoWorldBounds(120);
   const camX = bb.x0, camY = bb.y0;
   const o = isoS(camX, camY);
   ctx.save();
-  ctx.setTransform(ISO_K, ISO_K / 2, -ISO_K, ISO_K / 2, o.x, o.y);
+  ctx.transform(ISO_K, ISO_K / 2, -ISO_K, ISO_K / 2, o.x, o.y);
   isoViewSize = { w: bb.x1 - bb.x0, h: bb.y1 - bb.y0 };
   try {
     drawGroundLayer(camX, camY);
@@ -422,11 +446,13 @@ function drawOutsideIso() {
   drawCloudShadows(iso.ax, iso.ay, nightFactor);
   drawIsoNightLighting(nightFactor, vis);
 
-  const vignette = ctx.createRadialGradient(iso.W / 2, iso.H / 2, Math.min(iso.W, iso.H) * 0.35, iso.W / 2, iso.H / 2, Math.max(iso.W, iso.H) * 0.7);
+  ctx.restore(); // back to real screen pixels for vignette + HUD prompts
+
+  const vignette = ctx.createRadialGradient(realW / 2, realH / 2, Math.min(realW, realH) * 0.35, realW / 2, realH / 2, Math.max(realW, realH) * 0.7);
   vignette.addColorStop(0, 'rgba(0,0,0,0)');
   vignette.addColorStop(1, 'rgba(0,0,0,0.22)');
   ctx.fillStyle = vignette;
-  ctx.fillRect(0, 0, iso.W, iso.H);
+  ctx.fillRect(0, 0, realW, realH);
 
   drawRideHints();
   drawDialogueUI();
