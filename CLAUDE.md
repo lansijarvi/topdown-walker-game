@@ -16,13 +16,14 @@ All scripts share one global scope (top-level `const`/`let`/`function` are visib
 8. `interiors.js` - home furniture, bathroom/kitchen/laundry, seats/beds, interior collision
 9. `combat.js` - knockback, blood spots, bullet hits
 10. `update.js` - `update(timestamp, dt)`
-11. `draw-characters.js` - `drawDude`, vehicles, headlights
-12. `draw-world.js` - building exteriors, roads, terrain, water, trees
-13. `traffic.js` - traffic lanes, cars/bikes, lights, day/night, street lamps, camera
-14. `draw-scenes.js` - `drawOutside`, `drawInterior`, furniture, dialogue UI, minimap, HUD, `draw`, `loop`
-15. `visuals.js` - presentation layer: world-anchored ground textures, ~25k scattered decor sprites + street furniture (built once at load, bucketed by 256px cells), building roof/wall/window/door detailing, pre-rendered tree sprites, cloud shadows, light-mapped night (`drawNightLighting`), interior shell/back wall/plants. Purely visual - no collision
-16. `iso.js` - isometric outdoor renderer (default; V toggles classic top-down, saved in localStorage). World logic stays 2D; ground draw functions run through a 2:1 iso canvas transform (canvas.width/height are temporarily overridden to the visible world bbox so their culling works), buildings are extruded boxes with the regular facade/roof art mapped onto each face, upright things are placed at `isoS(x, y)` and depth-sorted against building footprints. Keys move along world axes (up = screen up-right). Interiors are still top-down
-17. `main.js` - button bindings, save/load (`localStorage`), name/tier overlays, startup
+11. `draw-characters.js` - original `drawDude` art (still used for lying/sitting/classic-view riding), top-down car/motorcycle art
+12. `people.js` - `drawPerson`: proportioned people with faces, hair styles and outfits (men: tee/jacket + jeans; women: dress / crop top + skirt or shorts / tank + jeans, heels). Wraps `drawDude` so all standing/walking/swimming/knocked-down/iso-riding characters use it
+13. `draw-world.js` - building exteriors, roads, terrain, water, trees
+14. `traffic.js` - traffic lanes, cars/bikes, lights, day/night, street lamps, camera
+15. `draw-scenes.js` - `drawOutside`, `drawInterior`, furniture, dialogue UI, minimap, HUD, `draw`, `loop`
+16. `visuals.js` - presentation layer: world-anchored ground textures, ~25k scattered decor sprites + street furniture (built once at load, bucketed by 256px cells), building roof/wall/window/door detailing, pre-rendered tree sprites, cloud shadows, light-mapped night (`drawNightLighting`), interior shell/back wall/plants. Purely visual - no collision
+17. `iso.js` - isometric outdoor renderer (default; V toggles classic top-down, saved in localStorage). World logic stays 2D; ground draw functions run through a 2:1 iso canvas transform (canvas.width/height are temporarily overridden to the visible world bbox so their culling works), buildings are extruded boxes with the regular facade/roof art mapped onto each face, upright things are placed at `isoS(x, y)` and depth-sorted against building footprints. Cars/motorcycles are true 3D models built from shaded boxes (`drawIsoCar`, `drawIsoMotorcycle`, `isoVehBox`). Keys move along world axes (up = screen up-right). Interiors are still top-down
+18. `main.js` - button bindings, save/load (`localStorage`), name/tier overlays, startup
 
 A new file goes into the `<script>` list in index.html at the right position.
 

@@ -59,18 +59,6 @@ function isoWorldBounds(pad) {
   };
 }
 
-// map a facing (world axis) onto the side-profile art + a skew that lines
-// the profile up with that axis on screen
-const ISO_ART = { right: ['right', 0.5], left: ['left', 0.5], down: ['left', -0.5], up: ['right', -0.5] };
-function isoArt(facing) { return (ISO_ART[facing] || ISO_ART.right)[0]; }
-function withIsoSkew(S, facing, fn) {
-  const [art, slope] = ISO_ART[facing] || ISO_ART.right;
-  ctx.save();
-  ctx.translate(S.x, S.y);
-  ctx.transform(1, slope, 0, 1, 0, 0);
-  fn(art);
-  ctx.restore();
-}
 // draw something that lies flat on the ground (boards, etc.) in the ground plane
 function withGroundPlane(S, fn) {
   ctx.save();
@@ -369,19 +357,19 @@ function drawOutsideIso() {
   farmhands.forEach(w => person(w.x, w.y, w, look(w, { knockedDown: down(w), moving: Math.hypot(w.targetX - w.x, w.targetY - w.y) > 2 })));
   lakeSwimmers.forEach(w => person(w.x, w.y, w, look(w, { knockedDown: down(w), swimming: !down(w), moving: Math.hypot(w.targetX - w.x, w.targetY - w.y) > 2 })));
 
-  const parkedMoto = (p) => add(p.x, p.y, S => withIsoSkew(S, p.facing, art => drawMotorcycle(0, 0, art, p.color)), true);
-  const parkedCar = (p) => add(p.x, p.y, S => withIsoSkew(S, p.facing, art => drawCar(0, 0, art, p.color, false, nightFactor)), true);
+  const parkedMoto = (p) => add(p.x, p.y, S => drawIsoMotorcycle(S, p.facing, p.color, false), true);
+  const parkedCar = (p) => add(p.x, p.y, S => drawIsoCar(S, p.facing, p.color, false, nightFactor), true);
   if (motorcycleParked) parkedMoto(motorcycleParked);
   if (!player.hasMotorcycle) parkedMoto(MOTO_SHOWROOM_SPOT);
   if (carParked) parkedCar(carParked);
   if (!player.hasCar) parkedCar(CAR_SHOWROOM_SPOT);
   if (boatParked) add(boatParked.x, boatParked.y, S => withGroundPlane(S, () => drawPaddleboard(0, 0, boatParked.facing, player.boatColor)), true);
   if (surfboardParked) add(surfboardParked.x, surfboardParked.y, S => withGroundPlane(S, () => drawSurfboard(0, 0, surfboardParked.facing, player.surfboardColor)), true);
-  trafficCars.forEach(car => add(car.x, car.y, S => withIsoSkew(S, axisFacing(car), art => drawCar(0, 0, art, car.color, car.police, nightFactor)), true));
+  trafficCars.forEach(car => add(car.x, car.y, S => drawIsoCar(S, axisFacing(car), car.color, car.police, nightFactor), true));
   trafficBikes.forEach(bike => add(bike.x, bike.y, S => {
     const f = axisFacing(bike), r = bike.rider;
-    withIsoSkew(S, f, art => drawMotorcycle(0, 0, art, bike.color, true));
-    drawDude(S.x, S.y, r.color, null, { facing: isoArt(f), gender: r.gender, hairColor: r.hairColor, hairstyle: r.hairstyle, skinTone: r.skinTone, riding: true });
+    drawIsoMotorcycle(S, f, bike.color, nightFactor > 0.3);
+    drawIsoRider(S, f, { color: r.color, gender: r.gender, hairColor: r.hairColor, hairstyle: r.hairstyle, skinTone: r.skinTone });
   }, true));
 
   // the player
@@ -449,7 +437,7 @@ function drawIsoPlayer(S, nightFactor, now) {
   if (player.bloodX !== undefined) { const B = isoS(player.bloodX, player.bloodY); drawBloodSpot(player, player.bloodX - B.x, player.bloodY - B.y); }
 
   if (player.onCar) {
-    withIsoSkew(S, player.facing, art => drawCar(0, 0, art, player.carColor, false, nightFactor));
+    drawIsoCar(S, player.facing, player.carColor, false, nightFactor);
     return;
   }
   if (player.onBoat) {
@@ -484,15 +472,183 @@ function drawIsoPlayer(S, nightFactor, now) {
   ctx.translate(S.x, S.y - lift);
   const wheelieLeft = player.wheelieUntil - now;
   if (player.onMotorcycle && wheelieLeft > 0) {
-    const art = isoArt(player.facing);
+    // tip back around the rear wheel, toward the screen side the bike's tail points at
+    const tailScreenX = isoVehPt({ x: 0, y: 0 }, ISO_DIRS[player.facing] || ISO_DIRS.right, -1, 0, 0).x;
     const prog = 1 - wheelieLeft / WHEELIE_DURATION;
-    ctx.rotate(-(art === 'right' ? 1 : -1) * Math.sin(prog * Math.PI) * 0.4);
+    ctx.rotate((tailScreenX < 0 ? 1 : -1) * Math.sin(prog * Math.PI) * 0.35);
   }
-  if (player.onMotorcycle) withIsoSkew({ x: 0, y: 0 }, player.facing, art => drawMotorcycle(0, 0, art, player.motoColor, true, isJumping));
-  drawDude(0, 0, '#3a6fd8', null, {
-    ...look,
-    facing: player.onMotorcycle ? isoArt(player.facing) : player.facing,
-    muzzleFlash: now < muzzleFlashUntil, riding: player.onMotorcycle, swimming: player.swimming, moving: player.moving
-  });
+  if (player.onMotorcycle) {
+    drawIsoMotorcycle({ x: 0, y: 0 }, player.facing, player.motoColor, nightFactor > 0.3);
+    drawIsoRider({ x: 0, y: 0 }, player.facing, { ...look, color: '#3a6fd8', gunEquipped: false });
+  } else {
+    drawDude(0, 0, '#3a6fd8', null, {
+      ...look,
+      muzzleFlash: now < muzzleFlashUntil, swimming: player.swimming, moving: player.moving
+    });
+  }
   ctx.restore();
+}
+
+// ---------------------------------------------------------------------
+// 3D vehicles built from shaded boxes
+// ---------------------------------------------------------------------
+const ISO_DIRS = { right: [1, 0], left: [-1, 0], down: [0, 1], up: [0, -1] };
+
+// project a point given in vehicle space (s = forward, w = across, z = up)
+function isoVehPt(S, dir, s, w, z) {
+  const u = s * dir[0] - w * dir[1], v = s * dir[1] + w * dir[0];
+  return { x: S.x + (u - v) * ISO_K, y: S.y + (u + v) * ISO_K / 2 - z };
+}
+function isoPoly(pts, fill) {
+  ctx.fillStyle = fill;
+  ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
+  for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+  ctx.closePath(); ctx.fill();
+}
+// box in vehicle space; only faces turned toward the camera (+x / +y world) are drawn
+function isoVehBox(S, dir, s0, s1, w0, w1, z0, z1, top, side, opts) {
+  opts = opts || {};
+  const P = (s, w, z) => isoVehPt(S, dir, s, w, z);
+  const across = [-dir[1], dir[0]];
+  const faces = [
+    { n: dir, pts: [P(s1, w0, z0), P(s1, w1, z0), P(s1, w1, z1), P(s1, w0, z1)], key: 'front' },
+    { n: [-dir[0], -dir[1]], pts: [P(s0, w0, z0), P(s0, w1, z0), P(s0, w1, z1), P(s0, w0, z1)], key: 'back' },
+    { n: across, pts: [P(s0, w1, z0), P(s1, w1, z0), P(s1, w1, z1), P(s0, w1, z1)], key: 'right' },
+    { n: [-across[0], -across[1]], pts: [P(s0, w0, z0), P(s1, w0, z0), P(s1, w0, z1), P(s0, w0, z1)], key: 'left' }
+  ];
+  faces.forEach(f => {
+    if (f.n[0] + f.n[1] <= 0) return;
+    // +y faces catch more light than +x faces
+    const col = (opts[f.key]) || (f.n[1] > 0 ? side : shadeColor(side, -14));
+    isoPoly(f.pts, col);
+    if (opts.outline) { ctx.strokeStyle = opts.outline; ctx.lineWidth = 0.8; ctx.stroke(); }
+  });
+  isoPoly([P(s0, w0, z1), P(s1, w0, z1), P(s1, w1, z1), P(s0, w1, z1)], top);
+  if (opts.outline) { ctx.strokeStyle = opts.outline; ctx.lineWidth = 0.8; ctx.stroke(); }
+}
+// which side-faces of a vehicle are visible from the camera
+function isoVehVisible(dir) {
+  const across = [-dir[1], dir[0]];
+  return { front: dir[0] + dir[1] > 0, back: dir[0] + dir[1] < 0, right: across[0] + across[1] > 0, left: across[0] + across[1] < 0 };
+}
+
+function drawIsoCar(S, facing, color, police, nightFactor) {
+  const dir = ISO_DIRS[facing] || ISO_DIRS.right;
+  const vis = isoVehVisible(dir);
+  const L = 33, Wd = 15;                       // half-length / half-width
+  const body = police ? '#f2f2f0' : (color || '#8f2e2e');
+  const lit = nightFactor > 0.3;
+
+  // contact shadow
+  isoPoly([isoVehPt(S, dir, -L - 2, -Wd - 2, 0), isoVehPt(S, dir, L + 2, -Wd - 2, 0), isoVehPt(S, dir, L + 4, Wd + 4, 0), isoVehPt(S, dir, -L + 2, Wd + 4, 0)], 'rgba(0,0,0,0.32)');
+
+  const wheel = (s, side) => {
+    const w0 = side > 0 ? Wd - 5 : -Wd - 1, w1 = side > 0 ? Wd + 1 : -Wd + 5;
+    isoVehBox(S, dir, s - 7, s + 7, w0, w1, 0, 11, '#1a1a1a', '#202020');
+    // hubcap on the outer face when it faces us
+    const outerVisible = side > 0 ? vis.right : vis.left;
+    if (outerVisible) {
+      const c = isoVehPt(S, dir, s, side > 0 ? w1 : w0, 5.5);
+      ctx.fillStyle = '#b8bcc0';
+      ctx.beginPath(); ctx.ellipse(c.x, c.y, 3, 3.3, 0, 0, Math.PI * 2); ctx.fill();
+    }
+  };
+  const wheels = [[-L + 10, -1], [L - 10, -1], [-L + 10, 1], [L - 10, 1]];
+  const nearSide = vis.right ? 1 : -1;
+  wheels.filter(([, sd]) => sd !== nearSide).forEach(([s, sd]) => wheel(s, sd));
+
+  // lower body with a darker rocker panel
+  isoVehBox(S, dir, -L, L, -Wd, Wd, 3, 7, shadeColor(body, -30), shadeColor(body, -30));
+  isoVehBox(S, dir, -L, L, -Wd, Wd, 7, 15, shadeColor(body, 10), police ? '#1c1c1c' : body, { outline: 'rgba(0,0,0,0.25)' });
+  if (police) isoVehBox(S, dir, -L * 0.45, L * 0.35, -Wd - 0.2, Wd + 0.2, 7, 15, '#f2f2f0', '#f2f2f0');
+  wheels.filter(([, sd]) => sd === nearSide).forEach(([s, sd]) => wheel(s, sd));
+
+  // lights on whichever end faces us
+  if (vis.front) {
+    [-Wd + 3, Wd - 7].forEach(w => isoVehBox(S, dir, L - 0.5, L + 0.5, w, w + 4, 10, 13, '#fff6c8', lit ? '#fff8d0' : '#e8e0b0'));
+    isoVehBox(S, dir, L - 0.5, L + 1, -Wd + 1, Wd - 1, 4, 6, '#8a8e92', '#a0a4a8'); // bumper
+  }
+  if (vis.back) {
+    [-Wd + 3, Wd - 7].forEach(w => isoVehBox(S, dir, -L - 0.5, -L + 0.5, w, w + 4, 10, 13, '#ff4a3a', lit ? '#ff5040' : '#c82a20'));
+    isoVehBox(S, dir, -L - 1, -L + 0.5, -Wd + 1, Wd - 1, 4, 6, '#8a8e92', '#a0a4a8');
+  }
+
+  // cabin: glass sides with a body-colored roof
+  const glass = { front: '#3a5068', back: '#34485e', right: '#40566e', left: '#40566e' };
+  isoVehBox(S, dir, -L * 0.42, L * 0.22, -Wd + 2, Wd - 2, 15, 26, police ? '#f2f2f0' : shadeColor(body, 14), '#40566e', { ...glass, outline: 'rgba(0,0,0,0.35)' });
+  // glass glint + pillars
+  const gl = vis.right ? Wd - 2 : -Wd + 2;
+  const a = isoVehPt(S, dir, -L * 0.1, gl, 25), b = isoVehPt(S, dir, L * 0.05, gl, 17);
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)'; ctx.lineWidth = 1.5;
+  ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+  ctx.strokeStyle = police ? '#f2f2f0' : body; ctx.lineWidth = 1.6;
+  const p1 = isoVehPt(S, dir, -L * 0.1, gl, 15), p2 = isoVehPt(S, dir, -L * 0.1, gl, 26);
+  ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+
+  if (police) {
+    const on = Math.floor(performance.now() / 250) % 2 === 0;
+    isoVehBox(S, dir, -L * 0.2, L * 0.02, -Wd + 3, -1, 26, 29, on ? '#ff3a3a' : '#7a1a1a', on ? '#ff3a3a' : '#7a1a1a');
+    isoVehBox(S, dir, -L * 0.2, L * 0.02, 1, Wd - 3, 26, 29, on ? '#1a2a7a' : '#3a6aff', on ? '#1a2a7a' : '#3a6aff');
+  }
+}
+
+function drawIsoMotorcycle(S, facing, color, lit) {
+  const dir = ISO_DIRS[facing] || ISO_DIRS.right;
+  const vis = isoVehVisible(dir);
+  const body = color || '#8f2e2e';
+  const P = (s, w, z) => isoVehPt(S, dir, s, w, z);
+  isoPoly([P(-20, -4, 0), P(20, -4, 0), P(21, 5, 0), P(-19, 5, 0)], 'rgba(0,0,0,0.3)');
+
+  // wheels: tire = two offset rims for thickness, then spokes
+  const wheel = (s) => {
+    const R = 8;
+    [-1.8, 1.8].forEach(w => {
+      ctx.save();
+      const o = P(s, w, R);
+      const ax = P(s + 1, w, R), az = P(s, w, R + 1);
+      // relative transform so it composes with jump/wheelie transforms
+      ctx.translate(o.x, o.y);
+      ctx.transform(ax.x - o.x, ax.y - o.y, az.x - o.x, az.y - o.y, 0, 0);
+      ctx.fillStyle = '#161616';
+      ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+      if (w > 0 === vis.right) {
+        ctx.fillStyle = '#9aa0a6';
+        ctx.beginPath(); ctx.arc(0, 0, R * 0.55, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#3a3a3a';
+        ctx.beginPath(); ctx.arc(0, 0, R * 0.2, 0, Math.PI * 2); ctx.fill();
+      }
+      ctx.restore();
+    });
+  };
+  const line = (a, b, col, wdt) => { ctx.strokeStyle = col; ctx.lineWidth = wdt; ctx.lineCap = 'round'; ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); };
+
+  wheel(-14);
+  // frame, swingarm, engine
+  line(P(-14, 0, 8), P(-2, 0, 10), '#2a2a2a', 2.2);
+  isoVehBox(S, dir, -5, 6, -3.5, 3.5, 4, 12, '#5a5e64', '#4a4e54');
+  // exhaust on the visible side
+  const ex = vis.right ? 4.5 : -4.5;
+  line(P(2, ex, 6), P(-15, ex, 9), '#b8b8b8', 2.4);
+  // seat + tank + tail
+  isoVehBox(S, dir, -15, -2, -3.5, 3.5, 12, 15, '#1e1e1e', '#2a2a2a');
+  isoVehBox(S, dir, -1, 9, -4.5, 4.5, 12, 18, shadeColor(body, 16), body, { outline: 'rgba(0,0,0,0.3)' });
+  isoVehBox(S, dir, -19, -14, -3, 3, 12, 16, shadeColor(body, 10), body);
+  wheel(14);
+  // fork, handlebars, headlight
+  line(P(14, 0, 8), P(10, 0, 22), '#c0c4c8', 2.2);
+  line(P(10, -9, 23), P(10, 9, 23), '#1c1c1c', 2);
+  if (vis.front) {
+    const h = P(13, 0, 19);
+    ctx.fillStyle = lit ? '#fff8d0' : '#e8e0b0';
+    ctx.beginPath(); ctx.arc(h.x, h.y, 2.6, 0, Math.PI * 2); ctx.fill();
+  }
+  if (vis.back) {
+    const tl = P(-19.5, 0, 14);
+    ctx.fillStyle = '#e83a2a'; ctx.fillRect(tl.x - 2, tl.y - 1, 4, 2.4);
+  }
+}
+
+// rider seated on an iso bike
+function drawIsoRider(S, facing, look) {
+  drawDude(S.x, S.y - 4, look.color, null, { ...look, facing, riding: true, isoRide: true });
 }

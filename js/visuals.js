@@ -599,14 +599,18 @@ function buildingWindows(b) {
   if (b._windows) return b._windows;
   const dz = b.doorZone;
   const out = [];
-  const winW = 14, winH = 18;
+  // fewer, larger windows: one per ~54px of wall, one row per ~48px of height
+  const winW = 17, winH = 22, pitchX = 54, pitchY = 48;
   const wallTop = b.y + b.h, wallBottom = wallTop + b.wallDepth;
-  for (let wy = wallTop + 12; wy + winH <= wallBottom - 10 || wy === wallTop + 12; wy += 34) {
-    for (let wx = b.x + 16; wx < b.x + b.w - 16; wx += winW + 20) {
-      if (dz && wx + winW > dz.x - 4 && wx < dz.x + dz.w + 4) continue;
+  const cols = Math.max(1, Math.floor((b.w - 20) / pitchX));
+  const startX = b.x + (b.w - (cols - 1) * pitchX - winW) / 2;
+  for (let wy = wallTop + 14; wy + winH <= wallBottom - 12 || wy === wallTop + 14; wy += pitchY) {
+    for (let c = 0; c < cols; c++) {
+      const wx = startX + c * pitchX;
+      if (dz && wx + winW > dz.x - 8 && wx < dz.x + dz.w + 8) continue;
       out.push({ x: wx, y: wy, w: winW, h: winH, lit: hashNoise(wx, wy) > 0.22 });
     }
-    if (wy + 34 + winH > wallBottom - 10) break;
+    if (wy + pitchY + winH > wallBottom - 12) break;
   }
   b._windows = out;
   return out;
