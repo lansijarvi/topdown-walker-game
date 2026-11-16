@@ -17,7 +17,7 @@ All scripts share one global scope (top-level `const`/`let`/`function` are visib
 9. `combat.js` - knockback, blood spots, bullet hits
 10. `update.js` - `update(timestamp, dt)`
 11. `draw-characters.js` - original `drawDude` art (still used for lying/sitting/classic-view riding), top-down car/motorcycle art
-12. `people.js` - `drawPerson`: proportioned people with faces, hair styles and outfits (men: tee/jacket + jeans; women: dress / crop top + skirt or shorts / tank + jeans, heels). Wraps `drawDude` so all standing/walking/swimming/knocked-down/iso-riding characters use it
+12. `people.js` - `drawPerson`: naturally proportioned (~6 heads, ~48px tall, feet at y=0) outlined figures with a crossing walk cycle, faces, hair (long hair falls down the back), and detailed outfits (men: tee / button-up / open jacket / hoodie + jeans or trousers with belt, pockets, creases; women: dress, crop top + skirt or shorts, tank or sweater + jeans, heels). Wraps `drawDude` so all standing/walking/swimming/knocked-down/iso-riding characters use it
 13. `draw-world.js` - building exteriors, roads, terrain, water, trees
 14. `traffic.js` - traffic lanes, cars/bikes, lights, day/night, street lamps, camera
 15. `draw-scenes.js` - `drawOutside`, `drawInterior`, furniture, dialogue UI, minimap, HUD, `draw`, `loop`
