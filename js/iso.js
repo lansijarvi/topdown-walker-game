@@ -135,7 +135,7 @@ function drawIsoBuilding(b, nightFactor, faded) {
   drawBuildingWall(px.south, f.x0, 0);
   drawBuildingWindows(px.south, 0, 0, nightFactor);
   drawBuildingDoor(px.south, 0, 0, 0, nightFactor);
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)'; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.2;
   ctx.strokeRect(f.x0, 0, b.w, H);
 
   // east face (front-right on screen), a shade darker
@@ -148,7 +148,7 @@ function drawIsoBuilding(b, nightFactor, faded) {
   drawBuildingWindows(px.east, 0, 0, nightFactor);
   ctx.fillStyle = 'rgba(20,10,30,0.22)';
   ctx.fillRect(px.east.x, 0, D, H);
-  ctx.strokeStyle = 'rgba(0,0,0,0.45)';
+  ctx.strokeStyle = INK;
   ctx.strokeRect(px.east.x, 0, D, H);
 
   // roof, in the ground plane but lifted by H
@@ -164,6 +164,8 @@ function drawIsoBuilding(b, nightFactor, faded) {
   ctx.fillStyle = 'rgba(255,240,220,0.18)';
   ctx.fillRect(f.x0, D - 3, b.w, 3);
   ctx.fillRect(f.x0 + b.w - 3, 0, 3, D);
+  ctx.strokeStyle = INK; ctx.lineWidth = 2.4;
+  ctx.strokeRect(f.x0, 0, b.w, D);
 
   ctx.restore();
 
@@ -525,15 +527,17 @@ function isoVehPt(S, dir, s, w, z) {
   const u = s * dir[0] - w * dir[1], v = s * dir[1] + w * dir[0];
   return { x: S.x + (u - v) * ISO_K, y: S.y + (u + v) * ISO_K / 2 - z };
 }
-function isoPoly(pts, fill) {
+function isoPoly(pts, fill, ink) {
   ctx.fillStyle = fill;
   ctx.beginPath(); ctx.moveTo(pts[0].x, pts[0].y);
   for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.closePath(); ctx.fill();
+  if (ink) { ctx.strokeStyle = ink; ctx.lineWidth = 0.75; ctx.lineJoin = 'round'; ctx.stroke(); }
 }
 // box in vehicle space; only faces turned toward the camera (+x / +y world) are drawn
 function isoVehBox(S, dir, s0, s1, w0, w1, z0, z1, top, side, opts) {
   opts = opts || {};
+  const ink = opts.outline === false ? null : INK;
   const P = (s, w, z) => isoVehPt(S, dir, s, w, z);
   const across = [-dir[1], dir[0]];
   const faces = [
@@ -546,11 +550,9 @@ function isoVehBox(S, dir, s0, s1, w0, w1, z0, z1, top, side, opts) {
     if (f.n[0] + f.n[1] <= 0) return;
     // +y faces catch more light than +x faces
     const col = (opts[f.key]) || (f.n[1] > 0 ? side : shadeColor(side, -14));
-    isoPoly(f.pts, col);
-    if (opts.outline) { ctx.strokeStyle = opts.outline; ctx.lineWidth = 0.8; ctx.stroke(); }
+    isoPoly(f.pts, col, ink);
   });
-  isoPoly([P(s0, w0, z1), P(s1, w0, z1), P(s1, w1, z1), P(s0, w1, z1)], top);
-  if (opts.outline) { ctx.strokeStyle = opts.outline; ctx.lineWidth = 0.8; ctx.stroke(); }
+  isoPoly([P(s0, w0, z1), P(s1, w0, z1), P(s1, w1, z1), P(s0, w1, z1)], top, ink);
 }
 // which side-faces of a vehicle are visible from the camera
 function isoVehVisible(dir) {
@@ -577,6 +579,7 @@ function drawIsoCar(S, facing, color, police, nightFactor) {
       const c = isoVehPt(S, dir, s, side > 0 ? w1 : w0, 5.5);
       ctx.fillStyle = '#b8bcc0';
       ctx.beginPath(); ctx.ellipse(c.x, c.y, 3, 3.3, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = INK; ctx.lineWidth = 0.6; ctx.stroke();
     }
   };
   const wheels = [[-L + 10, -1], [L - 10, -1], [-L + 10, 1], [L - 10, 1]];
@@ -585,7 +588,7 @@ function drawIsoCar(S, facing, color, police, nightFactor) {
 
   // lower body with a darker rocker panel
   isoVehBox(S, dir, -L, L, -Wd, Wd, 3, 7, shadeColor(body, -30), shadeColor(body, -30));
-  isoVehBox(S, dir, -L, L, -Wd, Wd, 7, 15, shadeColor(body, 10), police ? '#1c1c1c' : body, { outline: 'rgba(0,0,0,0.25)' });
+  isoVehBox(S, dir, -L, L, -Wd, Wd, 7, 15, shadeColor(body, 10), police ? '#1c1c1c' : body);
   if (police) isoVehBox(S, dir, -L * 0.45, L * 0.35, -Wd - 0.2, Wd + 0.2, 7, 15, '#f2f2f0', '#f2f2f0');
   wheels.filter(([, sd]) => sd === nearSide).forEach(([s, sd]) => wheel(s, sd));
 
@@ -601,7 +604,7 @@ function drawIsoCar(S, facing, color, police, nightFactor) {
 
   // cabin: glass sides with a body-colored roof
   const glass = { front: '#3a5068', back: '#34485e', right: '#40566e', left: '#40566e' };
-  isoVehBox(S, dir, -L * 0.42, L * 0.22, -Wd + 2, Wd - 2, 15, 26, police ? '#f2f2f0' : shadeColor(body, 14), '#40566e', { ...glass, outline: 'rgba(0,0,0,0.35)' });
+  isoVehBox(S, dir, -L * 0.42, L * 0.22, -Wd + 2, Wd - 2, 15, 26, police ? '#f2f2f0' : shadeColor(body, 14), '#40566e', glass);
   // glass glint + pillars
   const gl = vis.right ? Wd - 2 : -Wd + 2;
   const a = isoVehPt(S, dir, -L * 0.1, gl, 25), b = isoVehPt(S, dir, L * 0.05, gl, 17);
@@ -637,9 +640,11 @@ function drawIsoMotorcycle(S, facing, color, lit) {
       ctx.transform(ax.x - o.x, ax.y - o.y, az.x - o.x, az.y - o.y, 0, 0);
       ctx.fillStyle = '#161616';
       ctx.beginPath(); ctx.arc(0, 0, R, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 0.7; ctx.stroke();
       if (w > 0 === vis.right) {
         ctx.fillStyle = '#9aa0a6';
         ctx.beginPath(); ctx.arc(0, 0, R * 0.55, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = INK; ctx.lineWidth = 0.6; ctx.stroke();
         ctx.fillStyle = '#3a3a3a';
         ctx.beginPath(); ctx.arc(0, 0, R * 0.2, 0, Math.PI * 2); ctx.fill();
       }
@@ -657,7 +662,7 @@ function drawIsoMotorcycle(S, facing, color, lit) {
   line(P(2, ex, 6), P(-15, ex, 9), '#b8b8b8', 2.4);
   // seat + tank + tail
   isoVehBox(S, dir, -15, -2, -3.5, 3.5, 12, 15, '#1e1e1e', '#2a2a2a');
-  isoVehBox(S, dir, -1, 9, -4.5, 4.5, 12, 18, shadeColor(body, 16), body, { outline: 'rgba(0,0,0,0.3)' });
+  isoVehBox(S, dir, -1, 9, -4.5, 4.5, 12, 18, shadeColor(body, 16), body);
   isoVehBox(S, dir, -19, -14, -3, 3, 12, 16, shadeColor(body, 10), body);
   wheel(14);
   // fork, handlebars, headlight

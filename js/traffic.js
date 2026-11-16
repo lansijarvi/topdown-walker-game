@@ -221,6 +221,7 @@ function drawTrafficLight(x, y, color, camX, camY) {
   // pole
   ctx.fillStyle = '#3a3a3a';
   ctx.fillRect(-1.5, -14, 3, 16);
+  if (typeof INK !== 'undefined') { ctx.strokeStyle = INK; ctx.lineWidth = 0.8; ctx.strokeRect(-1.5, -14, 3, 16); }
 
   // housing box, tall enough for three stacked lenses
   ctx.fillStyle = '#1a1a1a';
@@ -239,6 +240,7 @@ function drawTrafficLight(x, y, color, camX, camY) {
     ctx.beginPath();
     ctx.arc(0, lens.y, 2.4, 0, Math.PI * 2);
     ctx.fill();
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 0.6; ctx.stroke();
   });
 
   ctx.restore();
@@ -276,6 +278,11 @@ function drawStreetLamp(x, y, camX, camY, nightFactor) {
   ctx.beginPath();
   ctx.arc(sx, sy - 44, 5, 0, Math.PI * 2);
   ctx.fill();
+  if (typeof INK !== 'undefined') {
+    ctx.strokeStyle = INK; ctx.lineWidth = 0.8; ctx.stroke();
+    ctx.strokeRect(sx - 2, sy - 39, 4, 39);
+    ctx.fillStyle = '#d8d4c4'; ctx.beginPath(); ctx.arc(sx, sy - 42.5, 2.2, 0, Math.PI); ctx.fill();
+  }
 
   if (nightFactor > 0.12) {
     const glowR = 60;

@@ -157,10 +157,33 @@ function drawGroundLayer(camX, camY) {
 // ---------------------------------------------------------------------
 // Decor sprites (pre-rendered once; anchor = bottom-center)
 // ---------------------------------------------------------------------
-function makeSprite(w, h, draw) {
-  const [c, g] = makeCanvas(w, h);
+// Line-art look shared with the people: everything solid gets a dark ink
+// outline. INK is the stroke color for vector shapes; inkSprite traces the
+// silhouette of a pre-rendered sprite (ignoring soft shadows) in one pass.
+const INK = 'rgba(32,22,16,0.78)';
+const INK_SOFT = 'rgba(32,22,16,0.4)';
+function inkSprite(c, alphaMin, inkAlpha) {
+  const w = c.width, h = c.height, g = c.getContext('2d');
+  const img = g.getImageData(0, 0, w, h), d = img.data;
+  const min = alphaMin || 160, ia = inkAlpha || 210;
+  const solid = new Uint8Array(w * h);
+  for (let i = 0; i < w * h; i++) solid[i] = d[i * 4 + 3] >= min ? 1 : 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const i = y * w + x;
+    if (solid[i]) continue;
+    const edge = (x > 0 && solid[i - 1]) || (x < w - 1 && solid[i + 1]) || (y > 0 && solid[i - w]) || (y < h - 1 && solid[i + w]);
+    if (!edge) continue;
+    const a0 = d[i * 4 + 3] / 255, a1 = ia / 255, a = a1 + a0 * (1 - a1);
+    d[i * 4] = 32; d[i * 4 + 1] = 22; d[i * 4 + 2] = 16; d[i * 4 + 3] = Math.round(a * 255);
+  }
+  g.putImageData(img, 0, 0);
+}
+function makeSprite(w, h, draw, noInk) {
+  const [c, g] = makeCanvas(w + 2, h + 2);
+  g.translate(1, 1);
   draw(g, w, h);
-  return { c, ax: w / 2, ay: h - 3 };
+  if (!noInk) inkSprite(c);
+  return { c, ax: w / 2 + 1, ay: h - 2 };
 }
 function groundShadow(g, cx, cy, rx, ry, a) {
   g.fillStyle = `rgba(0,0,0,${a || 0.22})`;
@@ -183,7 +206,7 @@ const DECOR_SPRITES = (() => {
       g.beginPath(); g.moveTo(bx, H - 3);
       g.quadraticCurveTo(bx + lean * 0.3, H - 3 - hh * 0.6, bx + lean, H - 3 - hh); g.stroke();
     }
-  });
+  }, true);
   S.tuft = [0, 1, 2, 3].map(() => tuft(['#2f5f26', '#4f8a3e', '#3d7232', '#62a04e'], 9));
   S.tuftCountry = [0, 1, 2].map(() => tuft(['#4a7a3a', '#76a85c', '#5a8c44', '#8aa850'], 10));
   S.tuftForest = [0, 1, 2].map(() => tuft(['#2a4022', '#3c5a2c', '#4a6a34'], 10));
@@ -516,6 +539,11 @@ const LEAFY_TREE_SPRITES = TREE_TINTS.map((v, i) => {
     blobs.forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
     g.fillStyle = shadeColor('#3d6e37', v);
     blobs.slice(0, 5).forEach(([x, y, r]) => { g.beginPath(); g.arc(x - 3, y - 4, r * 0.7, 0, Math.PI * 2); g.fill(); });
+    // leaf-cluster contours, like the line work on the people
+    g.strokeStyle = 'rgba(20,36,16,0.55)'; g.lineWidth = 1;
+    blobs.forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0.15 * Math.PI, 0.75 * Math.PI); g.stroke(); });
+    g.strokeStyle = INK; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(cx - 4, base + 1); g.lineTo(cx - 4, base - 18); g.moveTo(cx + 4, base + 1); g.lineTo(cx + 4, base - 18); g.stroke();
     g.fillStyle = shadeColor('#4f8445', v);
     [[cx - 9, cy - 9, 5], [cx + 2, cy - 12, 4], [cx - 13, cy + 1, 3.5]].forEach(([x, y, r]) => { g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill(); });
     g.fillStyle = shadeColor('#6aa05a', v);
@@ -542,6 +570,8 @@ const PINE_TREE_SPRITES = TREE_TINTS.map(v => makeSprite(48, 70, (g, w, h) => {
     for (let x = cx - half + 2; x < cx + half - 2; x += 4) {
       g.beginPath(); g.moveTo(x, bot); g.lineTo(x + 2, bot + 3); g.lineTo(x + 4, bot); g.fill();
     }
+    g.strokeStyle = 'rgba(16,32,16,0.6)'; g.lineWidth = 1;
+    g.beginPath(); g.moveTo(cx - half, bot); g.lineTo(cx + half, bot); g.stroke();
   });
 }));
 
@@ -634,7 +664,7 @@ function drawBuildingWall(b, sx, sy) {
 function drawBuildingWindows(b, camX, camY, nightFactor) {
   buildingWindows(b).forEach(win => {
     const x = win.x - camX, y = win.y - camY;
-    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillStyle = '#ece6d8';
     ctx.fillRect(x - 2, y - 2, win.w + 4, win.h + 4);
     const lit = win.lit && nightFactor > 0.25;
     if (lit) {
@@ -654,8 +684,12 @@ function drawBuildingWindows(b, camX, camY, nightFactor) {
     ctx.fillStyle = 'rgba(40,30,25,0.7)';
     ctx.fillRect(x + win.w / 2 - 0.5, y, 1, win.h);
     ctx.fillRect(x, y + win.h / 2 - 0.5, win.w, 1);
-    ctx.fillStyle = 'rgba(230,225,210,0.75)';
-    ctx.fillRect(x - 3, y + win.h + 1, win.w + 6, 2);
+    ctx.fillStyle = '#e6e0d0';
+    ctx.fillRect(x - 3, y + win.h + 1, win.w + 6, 2.5);
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.strokeRect(x - 2, y - 2, win.w + 4, win.h + 4);
+    ctx.strokeRect(x, y, win.w, win.h);
+    ctx.strokeRect(x - 3, y + win.h + 1, win.w + 6, 2.5);
   });
 }
 
@@ -672,6 +706,10 @@ function drawBuildingDoor(b, camX, camY, sy, nightFactor) {
     for (let i = 0; i < aw; i += 8) { ctx.fillStyle = cols[(i / 8) % 2]; ctx.fillRect(ax + i, ay, Math.min(8, aw - i), 11); }
     ctx.fillStyle = cols[0];
     for (let i = 0; i < aw; i += 8) { ctx.beginPath(); ctx.arc(ax + i + 4, ay + 11, 4, 0, Math.PI); ctx.fill(); }
+    ctx.strokeStyle = INK; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(ax, ay + 11); ctx.lineTo(ax, ay); ctx.lineTo(ax + aw, ay); ctx.lineTo(ax + aw, ay + 11);
+    for (let i = aw - 8; i >= 0; i -= 8) ctx.arc(ax + i + 4, ay + 11, 4, 0, Math.PI);
+    ctx.stroke();
   }
   // frame, door, panels, knob, step
   ctx.fillStyle = '#d8d0bc'; ctx.fillRect(x - 3, y - 3, w + 6, doorH + 3);
@@ -683,6 +721,10 @@ function drawBuildingDoor(b, camX, camY, sy, nightFactor) {
   ctx.strokeRect(x + 6, y + doorH * 0.5, w - 12, doorH * 0.4);
   ctx.fillStyle = '#e8c860'; ctx.beginPath(); ctx.arc(x + w - 7, y + doorH * 0.55, 1.8, 0, Math.PI * 2); ctx.fill();
   ctx.fillStyle = '#9a9488'; ctx.fillRect(x - 5, y + doorH, w + 10, 4);
+  ctx.strokeStyle = INK; ctx.lineWidth = 1;
+  ctx.strokeRect(x - 3, y - 3, w + 6, doorH + 3);
+  ctx.strokeRect(x + 2, y + 2, w - 4, doorH - 2);
+  ctx.strokeRect(x - 5, y + doorH, w + 10, 4);
   // porch light
   if (nightFactor > 0.25) {
     ctx.fillStyle = `rgba(255,230,160,${nightFactor.toFixed(3)})`;
@@ -702,6 +744,7 @@ function drawBuildingRoof(b, sx, sy) {
     g.addColorStop(0, 'rgba(0,0,0,0.05)'); g.addColorStop(1, 'rgba(0,0,0,0.22)');
     ctx.fillStyle = g; ctx.fillRect(sx, mid, b.w, sy + b.h - mid);
     ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(sx + 4, mid, b.w - 8, 2);
+    ctx.strokeStyle = INK_SOFT; ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(sx, mid); ctx.lineTo(sx + b.w, mid); ctx.stroke();
     ctx.fillStyle = 'rgba(255,255,255,0.18)'; ctx.fillRect(sx + 4, mid - 1, b.w - 8, 1);
     // chimney
     if (b.w > 120) {
@@ -709,6 +752,7 @@ function drawBuildingRoof(b, sx, sy) {
       ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(cx + 3, cy + 3, 12, 14);
       ctx.fillStyle = '#7a4a3a'; ctx.fillRect(cx, cy, 12, 14);
       ctx.fillStyle = '#5a3428'; ctx.fillRect(cx - 1, cy, 14, 3);
+      ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(cx, cy, 12, 14); ctx.strokeRect(cx - 1, cy, 14, 3);
     }
   } else {
     // flat roof: parapet rim, gravel, rooftop units
@@ -718,12 +762,14 @@ function drawBuildingRoof(b, sx, sy) {
     fillAnchored(GRAVEL_PATTERN, sx, sy, sx + inset, sy + inset, b.w - inset * 2, b.h - inset * 2);
     ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(sx + inset, sy + inset, b.w - inset * 2, 3);
     ctx.fillStyle = 'rgba(255,255,255,0.12)'; ctx.fillRect(sx, sy, b.w, 2);
+    ctx.strokeStyle = INK_SOFT; ctx.lineWidth = 1; ctx.strokeRect(sx + inset, sy + inset, b.w - inset * 2, b.h - inset * 2);
     const units = b.w > 180 ? 2 : (b.w > 90 ? 1 : 0);
     for (let i = 0; i < units; i++) {
       const ux = sx + 16 + hashNoise(b.x + i * 31, b.y) * (b.w - 60), uy = sy + 14 + hashNoise(b.y, b.x + i) * Math.max(4, b.h - 44);
       ctx.fillStyle = 'rgba(0,0,0,0.3)'; ctx.fillRect(ux + 4, uy + 4, 24, 18);
       ctx.fillStyle = '#a8aca8'; ctx.fillRect(ux, uy, 24, 18);
       ctx.fillStyle = '#8a8e8a'; ctx.fillRect(ux, uy + 12, 24, 6);
+      ctx.strokeStyle = INK; ctx.lineWidth = 1; ctx.strokeRect(ux, uy, 24, 18);
       ctx.strokeStyle = '#6a6e6a'; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.arc(ux + 12, uy + 7, 5, 0, Math.PI * 2); ctx.stroke();
       ctx.beginPath(); ctx.moveTo(ux + 7, uy + 7); ctx.lineTo(ux + 17, uy + 7); ctx.stroke();
