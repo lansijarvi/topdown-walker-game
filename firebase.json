@@ -4,5 +4,31 @@
   },
   "database": {
     "rules": "database.rules.json"
+  },
+  "hosting": {
+    "public": ".",
+    "ignore": [
+      "firebase.json",
+      ".firebaserc",
+      "**/.*", "**/.*/**", ".git/**",
+      "**/node_modules/**",
+      "old-versions/**",
+      "CLAUDE.md",
+      "CNAME",
+      "*.rules",
+      "database.rules.json",
+      "firestore.rules"
+    ],
+    "headers": [
+      {
+        "source": "**/*.@(js|html)",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache"
+          }
+        ]
+      }
+    ]
   }
 }

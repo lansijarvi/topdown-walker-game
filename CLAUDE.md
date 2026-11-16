@@ -1,6 +1,6 @@
 # Topdown Walker Game
 
-HTML5 canvas top-down game. [index.html](index.html) holds the styles and HTML overlay controls; the game code lives in [js/](js/) as plain (non-module) scripts loaded in order at the end of `<body>`. Hosted on GitHub Pages at www.plastichut.com (see [CNAME](CNAME)).
+HTML5 canvas top-down game. [index.html](index.html) holds the styles and HTML overlay controls; the game code lives in [js/](js/) as plain (non-module) scripts loaded in order at the end of `<body>`. Hosted on Firebase Hosting at https://westlake--county.web.app (deploy: `firebase deploy --only hosting`, serves the repo root minus dotfiles/old-versions/docs, see [firebase.json](firebase.json)). GitHub Pages at www.plastichut.com (see [CNAME](CNAME)) still deploys on push, but Comcast SecurityEdge blocks plastichut.com as a "security threat" (leftover raffle-site reputation), so a new domain is planned.
 
 ## Script layout and load order
 
@@ -37,7 +37,7 @@ A new file goes into the `<script>` list in index.html at the right position.
 
 - Project `westlake--county` (config in [.firebaserc](.firebaserc) / [firebase.json](firebase.json)). Firestore (nam5) and Realtime Database (`westlake--county-default-rtdb`, us-central1) exist, with deny-all rules in [firestore.rules](firestore.rules) / [database.rules.json](database.rules.json). Deploy rules with `firebase deploy --only firestore:rules,database`.
 - Auth: Email/Password + Google enabled, plastichut.com authorized.
-- Planned: sign-in/sign-up with cloud saves, small multiplayer (~5 players) over Realtime Database, NPC "thinking" (local needs/routines plus optional LLM dialogue via a Cloud Function), graphics pass. Firebase Hosting may replace GitHub Pages later (better sign-in reliability, `/api` rewrites to Functions).
+- Planned: sign-in/sign-up with cloud saves, small multiplayer (~5 players) over Realtime Database, NPC "thinking" (local needs/routines plus optional LLM dialogue via a Cloud Function), graphics pass. Theme direction: a motorcycle hangout game for the user and a few riding buddies (spare domain e.g. churchofmotorcycle.com could become the home).
 
 ## Working notes
 
