@@ -468,20 +468,22 @@ function addDecor(sprite, x, y, flip) {
   const inRiver = y => y > RIVER_Y - 40 && y < RIVER_Y + RIVER_H + 40;
   const pickProp = (r, horizontal) => r < 0.25 ? (horizontal ? P.benchH : P.benchV) : r < 0.5 ? P.trash : r < 0.68 ? P.hydrant : r < 0.88 ? P.planter : P.newsbox;
 
+  // furniture sits right at the curb (road side of the sidewalk) so the
+  // walkway stays clear - lamps already stand on the outer edge
   NUMBERED_STREETS.forEach(s => {
-    [s.y - SIDEWALK_W / 2 + 4, s.y + ROAD_W + SIDEWALK_W / 2 + 4].forEach(py => {
+    [s.y - 3, s.y + ROAD_W + 4].forEach(py => {
       for (let x = 80; x < DOWNTOWN_W - 40; x += 150 + rnd() * 120) {
         if (nearCross(x, NAMED_STREETS) || nearThing(x, py) || inRiver(py)) continue;
-        if (rnd() < 0.65) continue;
+        if (rnd() < 0.72) continue;
         addDecor(pickProp(rnd(), true), x, py, false);
       }
     });
   });
   NAMED_STREETS.forEach(s => {
-    [s.x - SIDEWALK_W / 2, s.x + ROAD_W + SIDEWALK_W / 2].forEach(px => {
+    [s.x - 4, s.x + ROAD_W + 4].forEach(px => {
       for (let y = 80; y < WORLD_H - 40; y += 150 + rnd() * 120) {
         if (nearCrossY(y, NUMBERED_STREETS) || nearThing(px, y) || inRiver(y)) continue;
-        if (rnd() < 0.65) continue;
+        if (rnd() < 0.72) continue;
         addDecor(pickProp(rnd(), false), px, y, false);
       }
     });
