@@ -144,7 +144,9 @@ function joyMove(x, y) {
     vx = x - joystick.x0; vy = y - joystick.y0; len = leash;
   }
   if (len < 8) { joystick.dx = joystick.dy = joystick.mag = 0; joystick.run = false; }
-  else { joystick.dx = vx / len; joystick.dy = vy / len; joystick.mag = len / JOY_R; joystick.run = len > JOY_R * 1.1; }
+  // run kicks in past the rim and only drops once you ease well back inside, so a thumb
+  // resting on the edge doesn't flicker run on/off (each new boost pops a wheelie)
+  else { joystick.dx = vx / len; joystick.dy = vy / len; joystick.mag = len / JOY_R; joystick.run = joystick.run ? len > JOY_R * 0.9 : len > JOY_R * 1.15; }
   joyRender();
 }
 const touchBlocked = () => awaitingName || awaitingTier || dialogueOpen || trackEditorOpen || furnitureEditorOpen || mapOpen;

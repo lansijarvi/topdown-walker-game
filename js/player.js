@@ -975,26 +975,43 @@ function rectOnPavement(rect) {
          isPaved(rect.x + rect.w, rect.y + rect.h);
 }
 
-function tryMoveOutside(dx, dy) {
-  let next = { x: player.x + dx, y: player.y, w: player.w, h: player.h };
-  next.x = Math.max(WORLD_LEFT, Math.min(WORLD_W - player.w, next.x));
-  let blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
-    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || westForestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inLake2(next.x + next.w / 2, next.y + next.h / 2) || inLake3(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
-  if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
-  if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
-  if (!blocked) player.x = next.x;
+function overlapArea(a, b) {
+  const w = Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x);
+  const h = Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y);
+  return w > 0 && h > 0 ? w * h : 0;
+}
 
-  next = { x: player.x, y: player.y + dy, w: player.w, h: player.h };
-  next.y = Math.max(WORLD_TOP, Math.min(WORLD_H - player.h, next.y));
-  blocked = buildings.some(b => {
-    const full = { x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth };
-    return rectsOverlap(next, full) && !rectsOverlap(next, b.doorZone);
-  }) || parkObstacles.some(o => rectsOverlap(next, o)) || cityTreeObstacles.some(o => rectsOverlap(next, o)) || riverObstacles.some(o => rectsOverlap(next, o)) || river2Obstacles.some(o => rectsOverlap(next, o)) || forestTreeObstacles.some(o => rectsOverlap(next, o)) || westForestTreeObstacles.some(o => rectsOverlap(next, o)) || wildernessObstacles.some(o => rectsOverlap(next, o)) || lifeguardObstacles.some(o => rectsOverlap(next, o));
-  if ((player.onMotorcycle || player.onCar) && (!rectOnPavement(next) || inLake(next.x + next.w / 2, next.y + next.h / 2) || inLake2(next.x + next.w / 2, next.y + next.h / 2) || inLake3(next.x + next.w / 2, next.y + next.h / 2) || inOcean(next.x + next.w / 2, next.y + next.h / 2))) blocked = true;
-  if (player.onBoat && !inLake(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
-  if (player.onSurfboard && !inOcean(next.x + next.w / 2, next.y + next.h / 2)) blocked = true;
-  if (!blocked) player.y = next.y;
+// Is moving the player's rect from `cur` to `next` blocked? Solid things
+// block as usual, but if you're somehow already overlapping one (parked a
+// bike against a wall, loaded a save in a bad spot...) any move that gets
+// you further out of it is allowed, so you can never be frozen in place.
+// Vehicles can't leave the pavement, but one that starts off it (e.g. the
+// bike parked on the shop's front walk) can drive back onto it.
+function moveBlocked(cur, next) {
+  const solid = (o, isDoor) => {
+    const an = overlapArea(next, o);
+    if (!an || isDoor) return false;
+    const ac = overlapArea(cur, o);
+    return !(ac > 0 && an < ac);
+  };
+  if (buildings.some(b => solid({ x: b.x, y: b.y, w: b.w, h: b.h + b.wallDepth }, rectsOverlap(next, b.doorZone)))) return true;
+  const lists = [parkObstacles, cityTreeObstacles, riverObstacles, river2Obstacles, forestTreeObstacles, westForestTreeObstacles, wildernessObstacles, lifeguardObstacles];
+  if (lists.some(list => list.some(o => solid(o, false)))) return true;
+  const ncx = next.x + next.w / 2, ncy = next.y + next.h / 2;
+  if (player.onMotorcycle || player.onCar) {
+    if (inLake(ncx, ncy) || inLake2(ncx, ncy) || inLake3(ncx, ncy) || inOcean(ncx, ncy)) return true;
+    if (rectOnPavement(cur) && !rectOnPavement(next)) return true;
+  }
+  if (player.onBoat && !inLake(ncx, ncy)) return true;
+  if (player.onSurfboard && !inOcean(ncx, ncy)) return true;
+  return false;
+}
+
+function tryMoveOutside(dx, dy) {
+  const cur = { x: player.x, y: player.y, w: player.w, h: player.h };
+  let next = { x: Math.max(WORLD_LEFT, Math.min(WORLD_W - player.w, player.x + dx)), y: player.y, w: player.w, h: player.h };
+  if (!moveBlocked(cur, next)) player.x = next.x;
+  const cur2 = { x: player.x, y: player.y, w: player.w, h: player.h };
+  next = { x: player.x, y: Math.max(WORLD_TOP, Math.min(WORLD_H - player.h, player.y + dy)), w: player.w, h: player.h };
+  if (!moveBlocked(cur2, next)) player.y = next.y;
 }
