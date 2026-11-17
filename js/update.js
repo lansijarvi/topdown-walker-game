@@ -86,6 +86,15 @@ function update(timestamp, dt) {
 
   if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
 
+  // touch thumbstick (main.js): screen-relative, so in the iso view a
+  // push "up" on screen is turned back into the matching world direction
+  if (joystick.active && joystick.mag > 0) {
+    let sx = joystick.dx, sy = joystick.dy;
+    if (ISO_VIEW && scene === 'outside') { const wx = sx / 2 + sy, wy = sy - sx / 2, l = Math.hypot(wx, wy) || 1; sx = wx / l; sy = wy / l; }
+    dx = sx; dy = sy;
+  }
+  const running = keys['shift'] || (joystick.active && joystick.run);
+
   player.moving = !player.sitting && !player.lying && !player.showering && (dx !== 0 || dy !== 0);
   if (player.moving) {
     if (Math.abs(dx) > Math.abs(dy)) player.facing = dx > 0 ? 'right' : 'left';
@@ -114,20 +123,20 @@ function update(timestamp, dt) {
 
   if (player.moving && !player.onCar && !player.onMotorcycle && !player.onBoat && !player.onSurfboard && timestamp > (player.nextFootstepAt || 0)) {
     playFootstep();
-    player.nextFootstepAt = timestamp + (keys['shift'] ? 220 : 340);
+    player.nextFootstepAt = timestamp + (running ? 220 : 340);
   }
 
   const moveSpeed = player.onCar
-    ? (keys['shift'] ? player.carBoostSpeed : player.carSpeed)
+    ? (running ? player.carBoostSpeed : player.carSpeed)
     : player.onMotorcycle
-    ? (keys['shift'] ? player.motoBoostSpeed : player.motoSpeed)
+    ? (running ? player.motoBoostSpeed : player.motoSpeed)
     : player.onBoat
     ? player.boatSpeed
     : player.onSurfboard
     ? player.surfSpeed
     : player.swimming
     ? player.speed * (bodySurfing ? 1.6 : 0.55)
-    : (keys['shift'] ? player.runSpeed : player.speed);
+    : (running ? player.runSpeed : player.speed);
 
   // vehicles build up to speed rather than snapping straight to it - walking,
   // swimming, and running on foot stay instant, only the car/bike/boat ramp
@@ -149,7 +158,7 @@ function update(timestamp, dt) {
 
   // popping into a wheelie the moment you kick into a run on the bike,
   // on top of the manual trigger from the WHEELIE button/key
-  const boostingOnBike = player.onMotorcycle && keys['shift'] && (dx !== 0 || dy !== 0);
+  const boostingOnBike = player.onMotorcycle && running && (dx !== 0 || dy !== 0);
   if (boostingOnBike && !wasBoostingOnBike) tryWheelie();
   wasBoostingOnBike = boostingOnBike;
 

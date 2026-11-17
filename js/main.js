@@ -50,6 +50,84 @@ bindTapButton('motoBtn', toggleVehicle);
 bindTapButton('mapBtn', toggleMap);
 bindTapButton('wheelieBtn', () => { tryJumpOrWheelie(); trySurfCatch(); });
 
+// ---------------------------------------------------------------------
+// Touch: floating thumbstick on the left half of the screen + two-finger
+// pinch zoom. The stick appears wherever the thumb lands; pushing past
+// its rim runs / boosts. update.js reads `joystick`.
+// ---------------------------------------------------------------------
+const joystick = { active: false, id: null, x0: 0, y0: 0, dx: 0, dy: 0, mag: 0, run: false, t0: 0, moved: 0 };
+const JOY_R = 52;
+const joyBase = document.getElementById('joyBase'), joyKnob = document.getElementById('joyKnob');
+const touchPts = new Map();
+let pinch = null;
+
+function joyRender() {
+  if (!joyBase) return;
+  if (!joystick.active) { joyBase.classList.remove('active', 'run'); joyBase.style.left = ''; joyBase.style.top = ''; joyKnob.style.transform = ''; return; }
+  joyBase.classList.add('active');
+  joyBase.classList.toggle('run', joystick.run);
+  joyBase.style.left = joystick.x0 + 'px'; joyBase.style.top = joystick.y0 + 'px';
+  const k = Math.min(1, joystick.mag) * JOY_R;
+  joyKnob.style.transform = `translate(${joystick.dx * k}px, ${joystick.dy * k}px)`;
+}
+function joyEnd() {
+  Object.assign(joystick, { active: false, id: null, dx: 0, dy: 0, mag: 0, run: false });
+  joyRender();
+}
+function joyMove(x, y) {
+  let vx = x - joystick.x0, vy = y - joystick.y0, len = Math.hypot(vx, vy);
+  joystick.moved = Math.max(joystick.moved, len);
+  // drag the base along if the thumb wanders well past the rim
+  const leash = JOY_R * 1.5;
+  if (len > leash) {
+    joystick.x0 += vx / len * (len - leash); joystick.y0 += vy / len * (len - leash);
+    vx = x - joystick.x0; vy = y - joystick.y0; len = leash;
+  }
+  if (len < 8) { joystick.dx = joystick.dy = joystick.mag = 0; joystick.run = false; }
+  else { joystick.dx = vx / len; joystick.dy = vy / len; joystick.mag = len / JOY_R; joystick.run = len > JOY_R * 1.1; }
+  joyRender();
+}
+const touchBlocked = () => awaitingName || awaitingTier || dialogueOpen || trackEditorOpen || furnitureEditorOpen;
+const pinchDist = () => { const [a, b] = pinch.ids.map(id => touchPts.get(id)); return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
+
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType === 'mouse' || touchBlocked()) return;
+  e.preventDefault();
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const free = [...touchPts.keys()].filter(id => id !== joystick.id);
+  // a second finger landing right after the first (before the stick moved) means pinch, not walk
+  if (joystick.active && free.length === 1 && performance.now() - joystick.t0 < 300 && joystick.moved < 14) {
+    free.unshift(joystick.id); joyEnd();
+  }
+  if (free.length >= 2 && !pinch) {
+    pinch = { ids: free.slice(0, 2), z0: isoUserZoom };
+    pinch.d0 = pinchDist();
+    return;
+  }
+  if (!joystick.active && !pinch && touchPts.size === 1 && e.clientX < window.innerWidth * 0.55) {
+    Object.assign(joystick, { active: true, id: e.pointerId, x0: e.clientX, y0: e.clientY, t0: performance.now(), moved: 0 });
+    joyMove(e.clientX, e.clientY);
+  }
+}, { passive: false });
+canvas.addEventListener('pointermove', e => {
+  if (!touchPts.has(e.pointerId)) return;
+  e.preventDefault();
+  touchPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (e.pointerId === joystick.id) joyMove(e.clientX, e.clientY);
+  else if (pinch && pinch.ids.includes(e.pointerId)) setIsoUserZoom(pinch.z0 * pinchDist() / pinch.d0, false);
+}, { passive: false });
+function touchUp(e) {
+  if (!touchPts.has(e.pointerId)) return;
+  touchPts.delete(e.pointerId);
+  if (e.pointerId === joystick.id) joyEnd();
+  if (pinch && pinch.ids.includes(e.pointerId)) { setIsoUserZoom(isoUserZoom, true); pinch = null; }
+}
+canvas.addEventListener('pointerup', touchUp);
+canvas.addEventListener('pointercancel', touchUp);
+// stop iOS Safari from zooming the whole page on pinch / double tap
+document.addEventListener('gesturestart', e => e.preventDefault());
+document.addEventListener('dblclick', e => e.preventDefault());
+
 const SAVE_KEY = 'topdownWalkerSave';
 let lastSaveFlashUntil = 0;
 

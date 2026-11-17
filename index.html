@@ -269,6 +269,41 @@
   }
   #dialogueOptions button:active { background: rgba(127,255,176,0.25); }
 
+  /* floating thumbstick: rests faintly bottom-left as a hint, jumps to
+     wherever the left thumb lands while dragging */
+  #joyBase {
+    position: fixed;
+    left: 90px;
+    top: calc(100% - 100px);
+    width: 112px;
+    height: 112px;
+    margin: -56px 0 0 -56px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.35);
+    background: radial-gradient(circle, rgba(255,255,255,0.06), rgba(255,255,255,0.16));
+    pointer-events: none;
+    z-index: 9;
+    display: none;
+    opacity: 0.45;
+  }
+  body.touch #joyBase { display: block; }
+  #joyBase.active { opacity: 1; }
+  #joyBase.run { border-color: #ffd27f; box-shadow: 0 0 14px rgba(255,210,127,0.5); }
+  #joyKnob {
+    position: absolute;
+    left: 50%; top: 50%;
+    width: 50px; height: 50px;
+    margin: -25px 0 0 -25px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.55);
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.35);
+  }
+  #joyBase.run #joyKnob { background: rgba(255,210,127,0.85); }
+  /* the thumbstick replaces the d-pad on touch screens */
+  body.touch #dpad { display: none; }
+  body.dialogue-open #joyBase { display: none; }
+
   /* hide touch controls on devices that clearly have a mouse/keyboard,
      show them whenever a touch capability is present */
   body:not(.touch) #dpad,
@@ -320,7 +355,7 @@
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows or the pad, hold Shift or tap RUN to run. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard/surfboard), N for the map, X to wheelie/jump.</span>
+  <span id="infoText">Move with WASD/arrows (or drag your left thumb), hold Shift (or push the stick to its edge) to run. Pinch or +/- to zoom. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard/surfboard), N for the map, X to wheelie/jump.</span>
   <div id="trackEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="furnitureEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="nameDisplay"></div>
@@ -362,6 +397,8 @@
   <button id="dpadRight">▶</button>
   <button id="dpadRun">RUN</button>
 </div>
+
+<div id="joyBase"><div id="joyKnob"></div></div>
 
 <button class="touchBtn" id="wheelieBtn">WHEELIE<br>(X)</button>
 

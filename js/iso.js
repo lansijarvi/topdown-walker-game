@@ -31,12 +31,16 @@ function isoZoom(realW, realH) {
   const auto = Math.max(0.9, Math.min(2.2, Math.min(realW, realH) / 530));
   return auto * isoUserZoom;
 }
+// shared by the +/- keys and touch pinch-zoom (main.js)
+function setIsoUserZoom(z, save) {
+  isoUserZoom = Math.max(0.5, Math.min(2.2, z));
+  if (save) try { localStorage.setItem('topdownWalkerZoom', String(isoUserZoom)); } catch (err) {}
+}
 window.addEventListener('keydown', e => {
   if (awaitingName || awaitingTier || dialogueOpen || e.repeat) return;
   const k = e.key;
   if (k !== '=' && k !== '+' && k !== '-' && k !== '_') return;
-  isoUserZoom = Math.max(0.6, Math.min(1.8, isoUserZoom * (k === '-' || k === '_' ? 1 / 1.15 : 1.15)));
-  try { localStorage.setItem('topdownWalkerZoom', String(isoUserZoom)); } catch (err) {}
+  setIsoUserZoom(isoUserZoom * (k === '-' || k === '_' ? 1 / 1.15 : 1.15), true);
   showFlavorMessage('Zoom ' + Math.round(isoUserZoom * 100) + '%');
 });
 
