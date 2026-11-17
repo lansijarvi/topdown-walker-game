@@ -334,22 +334,65 @@ function trySurfCatch() {
 // one unified mount/dismount button for every vehicle - car, motorcycle,
 // or paddleboard. Dismounts whichever one you're currently on; otherwise
 // mounts the nearest parked vehicle that's actually in range
+function nearestVehicle() {
+  const px = player.x + player.w / 2, py = player.y + player.h / 2;
+  const candidates = [];
+  if (player.hasCar && carParked) candidates.push({ fn: toggleCar, label: 'Drive', dist: Math.hypot(px - carParked.x, py - carParked.y) });
+  if (player.hasMotorcycle && motorcycleParked) candidates.push({ fn: toggleMotorcycle, label: 'Ride', dist: Math.hypot(px - motorcycleParked.x, py - motorcycleParked.y) });
+  if (boatParked) candidates.push({ fn: toggleBoat, label: 'Paddle', dist: Math.hypot(px - boatParked.x, py - boatParked.y) });
+  if (surfboardParked) candidates.push({ fn: toggleSurfboard, label: 'Surf', dist: Math.hypot(px - surfboardParked.x, py - surfboardParked.y) });
+  candidates.sort((a, b) => a.dist - b.dist);
+  return candidates.length && candidates[0].dist < MOUNT_RADIUS ? candidates[0] : null;
+}
+
 function toggleVehicle() {
   if (dialogueOpen || scene !== 'outside') return;
   if (player.onCar) return toggleCar();
   if (player.onMotorcycle) return toggleMotorcycle();
   if (player.onBoat) return toggleBoat();
   if (player.onSurfboard) return toggleSurfboard();
+  const v = nearestVehicle();
+  if (v) v.fn();
+}
 
-  const px = player.x + player.w / 2, py = player.y + player.h / 2;
-  const candidates = [];
-  if (player.hasCar && carParked) candidates.push({ fn: toggleCar, dist: Math.hypot(px - carParked.x, py - carParked.y) });
-  if (player.hasMotorcycle && motorcycleParked) candidates.push({ fn: toggleMotorcycle, dist: Math.hypot(px - motorcycleParked.x, py - motorcycleParked.y) });
-  if (boatParked) candidates.push({ fn: toggleBoat, dist: Math.hypot(px - boatParked.x, py - boatParked.y) });
-  if (surfboardParked) candidates.push({ fn: toggleSurfboard, dist: Math.hypot(px - surfboardParked.x, py - surfboardParked.y) });
+// what the vehicle button / F key would do right now (null = nothing)
+function vehicleActionLabel() {
+  if (dialogueOpen || scene !== 'outside') return null;
+  if (player.onCar) return 'Exit';
+  if (player.onMotorcycle || player.onBoat) return 'Get off';
+  if (player.onSurfboard) return 'Drop board';
+  const v = nearestVehicle();
+  return v ? v.label : null;
+}
 
-  candidates.sort((a, b) => a.dist - b.dist);
-  if (candidates.length && candidates[0].dist < MOUNT_RADIUS) candidates[0].fn();
+// what the interact button / E key would do right now (null = nothing)
+function interactLabel() {
+  if (dialogueOpen) return null;
+  if (player.sitting) return 'Stand';
+  if (player.lying) return 'Get up';
+  if (player.showering) return 'Step out';
+  if (nearbyNPC) return 'Talk';
+  if (nearbySeat) return 'Sit';
+  if (nearbyBed) return 'Lie down';
+  if (nearbyShower) return 'Shower';
+  if (nearbyFixture) { const h = (nearbyFixture.hint || 'Use').replace(/^\[E\] to /, ''); return h.charAt(0).toUpperCase() + h.slice(1); }
+  if (nearbyQuestSpot) return nearbyQuestSpot.kind === 'pickup' ? 'Pick up' : 'Look';
+  return null;
+}
+
+// Space / the big touch button: jump on the bike, catch a wave on the
+// surfboard, otherwise fire
+function primaryAction() {
+  if (player.onMotorcycle) return tryJumpOrWheelie();
+  if (player.onSurfboard) return trySurfCatch();
+  shoot();
+}
+function primaryActionLabel() {
+  if (dialogueOpen) return null;
+  if (player.onMotorcycle) return performance.now() < player.jumpUntil && !player.jumpBoosted ? 'BOOST' : 'JUMP';
+  if (player.onSurfboard) return 'CATCH';
+  if (player.hasGun && player.gunEquipped && !player.onCar && !player.onBoat) return 'FIRE';
+  return null;
 }
 
 function toggleMap() {
@@ -675,17 +718,22 @@ window.addEventListener('keydown', e => {
   // OS/browser's auto-repeat while the key stays held - otherwise holding
   // one a beat too long rapidly re-triggers it (e.g. mount/dismount the
   // bike several times before you let go)
-  if (e.key.toLowerCase() === 'g' && !e.repeat) toggleGunEquip();
+  // standard layout: WASD + Shift sprint, Space jump/fire, E interact,
+  // F get in/out of vehicles, R reload, G gun, M/Tab map, Esc menu.
+  // (X and N still work as the old wheelie/map keys)
+  const k = e.key.toLowerCase();
+  if (k === 'g' && !e.repeat) toggleGunEquip();
   if (e.key === ' ') {
     e.preventDefault();
-    shoot();
+    if (!e.repeat || (!player.onMotorcycle && !player.onSurfboard)) primaryAction();
   }
-  if (e.key.toLowerCase() === 'r') reload();
+  if (k === 'r') reload();
   // one button for every vehicle - car, motorcycle, paddleboard - mounts
   // or dismounts whichever one applies
-  if (e.key.toLowerCase() === 'm' && !e.repeat) toggleVehicle();
-  if (e.key.toLowerCase() === 'n' && !e.repeat) toggleMap();
-  if (e.key.toLowerCase() === 'x' && !e.repeat) { tryJumpOrWheelie(); trySurfCatch(); }
+  if (k === 'f' && !e.repeat) toggleVehicle();
+  if ((k === 'm' || k === 'n' || k === 'tab') && !e.repeat) { if (k === 'tab') e.preventDefault(); toggleMap(); }
+  if (k === 'escape' && !e.repeat) { if (mapOpen) mapOpen = false; else if (typeof toggleMenu === 'function') toggleMenu(); }
+  if (k === 'x' && !e.repeat) { tryJumpOrWheelie(); trySurfCatch(); }
   if (e.key.toLowerCase() === 't' && !e.repeat) { if (scene === 'outside') toggleTrackEditor(); else toggleFurnitureEditor(); }
   if (e.key.toLowerCase() === 'c' && !e.repeat && trackEditorOpen) exportTrackRamps();
 });

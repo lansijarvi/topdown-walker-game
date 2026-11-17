@@ -156,93 +156,6 @@
   .tierBtn:active { background: rgba(127,255,176,0.35); }
   .tierBtn small { display: block; font-weight: normal; color: #bbb; font-size: 11px; margin-top: 2px; }
 
-  #gunControls {
-    position: fixed;
-    bottom: 130px;
-    right: 16px;
-    display: flex;
-    flex-direction: column;
-    gap: 8px;
-    z-index: 10;
-  }
-  #gunControls button, .touchBtn {
-    font-family: monospace;
-    font-weight: bold;
-    font-size: 13px;
-    padding: 10px 14px;
-    border-radius: 10px;
-    border: 2px solid rgba(255,255,255,0.4);
-    cursor: pointer;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: manipulation;
-  }
-  #shootBtn {
-    background: #b33a3a;
-    color: #fff;
-  }
-  #shootBtn:active {
-    background: #8f2e2e;
-  }
-  #reloadBtn {
-    background: #3a5fb3;
-    color: #fff;
-  }
-  #reloadBtn:active {
-    background: #2e4a8f;
-  }
-
-  /* touch-only controls: virtual d-pad and action buttons */
-  #dpad {
-    position: fixed;
-    left: 16px;
-    bottom: 16px;
-    width: 150px;
-    height: 150px;
-    z-index: 10;
-  }
-  #dpad button {
-    position: absolute;
-    width: 50px;
-    height: 50px;
-    font-size: 18px;
-    border-radius: 10px;
-    border: 2px solid rgba(255,255,255,0.4);
-    background: rgba(255,255,255,0.18);
-    color: #fff;
-    user-select: none;
-    -webkit-user-select: none;
-    touch-action: manipulation;
-  }
-  #dpad button:active { background: rgba(255,255,255,0.4); }
-  #dpadUp    { left: 50px; top: 0; }
-  #dpadDown  { left: 50px; top: 100px; }
-  #dpadLeft  { left: 0; top: 50px; }
-  #dpadRight { left: 100px; top: 50px; }
-  #dpadRun   { left: 50px; top: 50px; font-size: 10px; background: rgba(255,210,127,0.3); }
-  #dpadRun.active { background: #ffd27f; color: #1a1a1a; border-color: #fff; }
-
-  #actionButtons {
-    position: fixed;
-    right: 16px;
-    bottom: 16px;
-    display: flex;
-    gap: 8px;
-    z-index: 10;
-  }
-  .touchBtn {
-    background: rgba(20,20,20,0.55);
-    color: #fff;
-    width: 54px;
-    height: 54px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 0;
-  }
-  .touchBtn:active { background: rgba(255,210,127,0.35); }
-
   #dialogueOptions {
     position: fixed;
     left: 50%;
@@ -300,62 +213,57 @@
     box-shadow: 0 2px 6px rgba(0,0,0,0.35);
   }
   #joyBase.run #joyKnob { background: rgba(255,210,127,0.85); }
-  /* the thumbstick replaces the d-pad on touch screens */
-  body.touch #dpad { display: none; }
   body.dialogue-open #joyBase { display: none; }
 
-  /* hide touch controls on devices that clearly have a mouse/keyboard,
-     show them whenever a touch capability is present */
-  body:not(.touch) #dpad,
-  body:not(.touch) #actionButtons,
-  body:not(.touch) #wheelieBtn {
-    opacity: 0.35;
-  }
-
-  /* movement is frozen during a conversation anyway - hide the pad/buttons
-     so they don't collide with the dialogue box and its option buttons */
-  body.dialogue-open #dpad,
-  body.dialogue-open #actionButtons,
-  body.dialogue-open #gunControls,
-  body.dialogue-open #wheelieBtn {
-    display: none;
-  }
-
-  /* aligned directly above TALK (the first/leftmost button in the action
-     row) using the same right-edge math as that row, so it stays clear of
-     everything else regardless of screen width - a fixed left: position
-     worked in landscape but landed right on top of the action buttons on
-     a narrower portrait phone screen */
-  #wheelieBtn {
+  /* ---- touch HUD: action cluster bottom-right, menu + map top-left ----
+     Buttons only show when they do something right now, and are labelled
+     with what they'll do (Talk / Ride / Exit / Reload...). */
+  #touchHud { display: none; }
+  body.touch #touchHud { display: block; }
+  body.dialogue-open #touchHud, body.map-open #touchHud .tbtn:not(#btnMap) { display: none; }
+  .tbtn {
     position: fixed;
-    right: 264px;
-    bottom: 82px;
     z-index: 10;
+    width: 60px; height: 60px;
+    border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.55);
+    background: rgba(20,20,24,0.55);
+    color: #fff;
+    font-family: monospace; font-weight: bold; font-size: 11px; line-height: 1.1;
+    display: flex; align-items: center; justify-content: center; text-align: center;
+    padding: 2px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+    user-select: none; -webkit-user-select: none;
+    touch-action: none;
+    -webkit-tap-highlight-color: transparent;
   }
-
-  /* the d-pad and the action-button row are wide enough that they overlap
-     on every common phone width in portrait (the d-pad's right edge sits
-     past where the action row's left edge lands) - shrink both so they
-     actually fit side by side instead of stacking on top of each other */
-  @media (max-width: 480px) {
-    #dpad { width: 110px; height: 110px; }
-    #dpad button { width: 38px; height: 38px; font-size: 14px; }
-    #dpadUp    { left: 36px; top: 0; }
-    #dpadDown  { left: 36px; top: 72px; }
-    #dpadLeft  { left: 0; top: 36px; }
-    #dpadRight { left: 72px; top: 36px; }
-    #dpadRun   { left: 36px; top: 36px; font-size: 8px; }
-
-    #actionButtons { gap: 6px; }
-    .touchBtn { width: 40px; height: 40px; font-size: 9px; line-height: 1.15; }
-
-    #wheelieBtn { right: 200px; bottom: 64px; }
+  .tbtn.hidden { display: none; }
+  .tbtn.pressed { transform: scale(0.92); background: rgba(255,255,255,0.3); }
+  #btnPrimary { right: 22px; bottom: 30px; width: 84px; height: 84px; font-size: 15px; background: rgba(180,50,50,0.7); border-color: rgba(255,200,200,0.8); }
+  #btnPrimary.jump { background: rgba(50,110,190,0.7); border-color: rgba(190,220,255,0.8); }
+  #btnPrimary.hot { background: rgba(230,160,40,0.85); border-color: #fff; }
+  #btnUse { right: 122px; bottom: 26px; background: rgba(200,150,40,0.7); border-color: #ffd27f; }
+  #btnRide { right: 112px; bottom: 108px; background: rgba(40,130,80,0.7); border-color: #9fe8b8; }
+  #btnReload { right: 34px; bottom: 132px; width: 54px; height: 54px; background: rgba(50,80,160,0.7); }
+  #btnGun { right: 38px; bottom: 196px; width: 48px; height: 48px; font-size: 10px; }
+  #btnMenu, #btnMap {
+    top: calc(10px + env(safe-area-inset-top)); width: 44px; height: 44px; border-radius: 10px; font-size: 20px;
   }
+  #btnMenu { left: calc(10px + env(safe-area-inset-left)); }
+  #btnMap { left: calc(62px + env(safe-area-inset-left)); font-size: 18px; }
+  /* touch: the help/settings panel lives behind the menu button */
+  body.touch #info { top: 62px; display: none; }
+  .touchHelp { display: none; }
+  body.touch .touchHelp { display: inline; }
+  body.touch .keysHelp { display: none; }
+  body.touch.menu-open #info { display: block; }
+  /* desktop: Esc / the menu button hides and shows it */
+  body:not(.touch).menu-closed #info { display: none; }
 </style>
 </head>
 <body>
 <div id="info">
-  <span id="infoText">Move with WASD/arrows (or drag your left thumb), hold Shift (or push the stick to its edge) to run. Pinch or +/- to zoom. Tap TALK to interact. G to draw your gun, M to ride whatever's nearby (bike/car/paddleboard/surfboard), N for the map, X to wheelie/jump.</span>
+  <span id="infoText"><span class="keysHelp">WASD move · Shift sprint/boost · E interact · F get in/out · Space jump (bike) / fire · Click fire · G gun · R reload · M or Tab map · V view · +/- zoom · Esc menu</span><span class="touchHelp">Left thumb: drag to move, push to the edge to run. Buttons on the right show up when you can use them. Pinch to zoom.</span></span>
   <div id="trackEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="furnitureEditorInfo" style="display:none; margin-top:6px; color:#ffd27f;"></div>
   <div id="nameDisplay"></div>
@@ -385,28 +293,16 @@
 </div>
 
 <canvas id="game" width="800" height="600"></canvas>
-<div id="gunControls">
-  <button id="reloadBtn">RELOAD (R)</button>
-  <button id="shootBtn">SHOOT (Space)</button>
-</div>
-
-<div id="dpad">
-  <button id="dpadUp">▲</button>
-  <button id="dpadDown">▼</button>
-  <button id="dpadLeft">◀</button>
-  <button id="dpadRight">▶</button>
-  <button id="dpadRun">RUN</button>
-</div>
-
 <div id="joyBase"><div id="joyKnob"></div></div>
 
-<button class="touchBtn" id="wheelieBtn">WHEELIE<br>(X)</button>
-
-<div id="actionButtons">
-  <button class="touchBtn" id="talkBtn">TALK<br>(E)</button>
-  <button class="touchBtn" id="gunBtn">GUN<br>(G)</button>
-  <button class="touchBtn" id="motoBtn">RIDE<br>(M)</button>
-  <button class="touchBtn" id="mapBtn">MAP<br>(N)</button>
+<div id="touchHud">
+  <button class="tbtn" id="btnMenu" aria-label="Menu">☰</button>
+  <button class="tbtn" id="btnMap" aria-label="Map">🗺</button>
+  <button class="tbtn hidden" id="btnPrimary">FIRE</button>
+  <button class="tbtn hidden" id="btnUse">Talk</button>
+  <button class="tbtn hidden" id="btnRide">Ride</button>
+  <button class="tbtn hidden" id="btnReload">Reload</button>
+  <button class="tbtn hidden" id="btnGun">Gun</button>
 </div>
 
 <div id="dialogueOptions"></div>

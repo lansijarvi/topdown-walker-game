@@ -1,54 +1,62 @@
-document.getElementById('shootBtn').addEventListener('click', shoot);
-document.getElementById('reloadBtn').addEventListener('click', reload);
-
-// helper to bind a "held down" virtual key to a button, using both touch
-// and mouse events so it also works for testing with a mouse on desktop
-function bindHoldButton(id, keyName) {
+// ---------------------------------------------------------------------
+// Touch HUD: action buttons that appear only when they do something, each
+// labelled with the action (synced ~10x a second from game state), plus
+// menu + map buttons. Actions fire on touch-down for snappy response.
+// ---------------------------------------------------------------------
+function bindTouchBtn(id, fn) {
   const el = document.getElementById(id);
   if (!el) return;
-  const press = (e) => { e.preventDefault(); keys[keyName] = true; };
-  const release = (e) => { e.preventDefault(); keys[keyName] = false; };
-  el.addEventListener('touchstart', press, { passive: false });
-  el.addEventListener('touchend', release, { passive: false });
-  el.addEventListener('touchcancel', release, { passive: false });
-  el.addEventListener('mousedown', press);
-  el.addEventListener('mouseup', release);
-  el.addEventListener('mouseleave', release);
+  const down = e => { e.preventDefault(); e.stopPropagation(); el.classList.add('pressed'); fn(); };
+  const up = () => el.classList.remove('pressed');
+  el.addEventListener('pointerdown', down);
+  el.addEventListener('pointerup', up);
+  el.addEventListener('pointercancel', up);
+  el.addEventListener('pointerleave', up);
 }
-
-bindHoldButton('dpadUp', 'w');
-bindHoldButton('dpadDown', 's');
-bindHoldButton('dpadLeft', 'a');
-bindHoldButton('dpadRight', 'd');
-
-// RUN is a toggle instead of a hold button - trying to hold it down while
-// also pressing a direction button is awkward with one thumb, so tap once
-// to start running and tap again to stop
-const runBtn = document.getElementById('dpadRun');
-if (runBtn) {
-  const toggleRun = (e) => {
-    e.preventDefault();
-    keys['shift'] = !keys['shift'];
-    runBtn.classList.toggle('active', keys['shift']);
-  };
-  runBtn.addEventListener('touchstart', toggleRun, { passive: false });
-  runBtn.addEventListener('click', toggleRun);
+function toggleMenu(force) {
+  const touch = document.body.classList.contains('touch');
+  const open = force !== undefined ? force : (touch ? !document.body.classList.contains('menu-open') : document.body.classList.contains('menu-closed'));
+  document.body.classList.toggle('menu-open', open);
+  document.body.classList.toggle('menu-closed', !open);
 }
+bindTouchBtn('btnPrimary', primaryAction);
+bindTouchBtn('btnUse', pressInteract);
+bindTouchBtn('btnRide', toggleVehicle);
+bindTouchBtn('btnReload', reload);
+bindTouchBtn('btnGun', toggleGunEquip);
+bindTouchBtn('btnMap', toggleMap);
+bindTouchBtn('btnMenu', () => toggleMenu());
 
-// one-shot action buttons - fire once per tap rather than being held
-function bindTapButton(id, fn) {
-  const el = document.getElementById(id);
+const hudEls = {};
+['btnPrimary', 'btnUse', 'btnRide', 'btnReload', 'btnGun'].forEach(id => { hudEls[id] = document.getElementById(id); });
+function setHudBtn(id, label, extraClass) {
+  const el = hudEls[id];
   if (!el) return;
-  const fire = (e) => { e.preventDefault(); fn(); };
-  el.addEventListener('touchstart', fire, { passive: false });
-  el.addEventListener('click', fire);
+  const show = !!label;
+  if (el.classList.contains('hidden') === show) el.classList.toggle('hidden', !show);
+  if (show && el.textContent !== label) el.textContent = label;
+  if (extraClass) Object.entries(extraClass).forEach(([c, on]) => { if (el.classList.contains(c) !== on) el.classList.toggle(c, on); });
 }
+function syncTouchHud() {
+  if (document.body.classList.contains('touch') && !awaitingName && !awaitingTier) {
+    const prim = primaryActionLabel();
+    setHudBtn('btnPrimary', prim, { jump: prim === 'JUMP' || prim === 'BOOST' || prim === 'CATCH', hot: prim === 'BOOST' || (prim === 'CATCH' && surfboardOnBigWave()) });
+    setHudBtn('btnUse', interactLabel());
+    setHudBtn('btnRide', vehicleActionLabel());
+    const riding = player.onCar || player.onMotorcycle || player.onBoat || player.onSurfboard;
+    setHudBtn('btnReload', player.hasGun && player.gunEquipped && !riding && player.ammoInMag < MAG_SIZE && player.spareMags > 0 ? 'Reload' : null);
+    setHudBtn('btnGun', player.hasGun && !riding && !dialogueOpen ? (player.gunEquipped ? 'Holster' : 'Gun') : null);
+  }
+  document.body.classList.toggle('map-open', mapOpen);
+}
+setInterval(syncTouchHud, 100);
 
-bindTapButton('talkBtn', pressInteract);
-bindTapButton('gunBtn', toggleGunEquip);
-bindTapButton('motoBtn', toggleVehicle);
-bindTapButton('mapBtn', toggleMap);
-bindTapButton('wheelieBtn', () => { tryJumpOrWheelie(); trySurfCatch(); });
+// desktop: left click fires when the gun is out (editors keep their clicks)
+canvas.addEventListener('pointerdown', e => {
+  if (e.pointerType !== 'mouse' || e.button !== 0) return;
+  if (trackEditorOpen || furnitureEditorOpen || awaitingName || awaitingTier || dialogueOpen) return;
+  if (player.hasGun && player.gunEquipped) shoot();
+});
 
 // ---------------------------------------------------------------------
 // Touch: floating thumbstick on the left half of the screen + two-finger

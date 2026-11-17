@@ -237,6 +237,7 @@ function drawOutside() {
 
 // "[M] to ride" style prompts when standing next to a parked vehicle
 function drawRideHints() {
+  if (document.body.classList.contains('touch')) return; // the touch buttons carry their own labels
   if (motorcycleParked && !player.onMotorcycle) {
     const mdist = Math.hypot(
       (player.x + player.w / 2) - motorcycleParked.x,
@@ -245,7 +246,7 @@ function drawRideHints() {
     if (mdist < MOUNT_RADIUS) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      const hint = '[M] to ride';
+      const hint = '[F] to ride';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -262,7 +263,7 @@ function drawRideHints() {
     if (cdist < MOUNT_RADIUS) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      const hint = '[M] to drive';
+      const hint = '[F] to drive';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -279,7 +280,7 @@ function drawRideHints() {
     if (bdist < MOUNT_RADIUS) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      const hint = '[M] to hop on paddleboard';
+      const hint = '[F] to hop on paddleboard';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -296,7 +297,7 @@ function drawRideHints() {
     if (sdist < MOUNT_RADIUS) {
       ctx.font = 'bold 13px monospace';
       ctx.textAlign = 'center';
-      const hint = '[M] to grab surfboard';
+      const hint = '[F] to grab surfboard';
       const hw = ctx.measureText(hint).width;
       ctx.fillStyle = 'rgba(0,0,0,0.6)';
       ctx.fillRect(canvas.width/2 - hw/2 - 8, canvas.height - 40, hw + 16, 24);
@@ -808,7 +809,8 @@ function drawInterior() {
 }
 
 function drawDialogueUI() {
-  if (nearbyNPC && !dialogueOpen) {
+  const touch = document.body.classList.contains('touch');
+  if (nearbyNPC && !dialogueOpen && !touch) {
     ctx.font = 'bold 13px monospace';
     ctx.textAlign = 'center';
     const hint = '[E] to talk';
@@ -818,7 +820,7 @@ function drawDialogueUI() {
     ctx.fillText(hint, canvas.width/2, canvas.height - 23);
   }
 
-  if (!dialogueOpen) {
+  if (!dialogueOpen && !touch) {
     let hint = null;
     if (player.sitting) hint = '[E] to stand';
     else if (player.lying) hint = '[E] to get up';
@@ -1031,7 +1033,7 @@ function drawMinimap() {
   ctx.fillText('MAP', canvas.width / 2, 30);
   ctx.font = '13px monospace';
   ctx.fillStyle = '#aaa';
-  ctx.fillText('[N] to close - red: you   yellow: bike   blue: car   gold outline: home', canvas.width / 2, canvas.height - 16);
+  ctx.fillText('[M] to close - red: you   yellow: bike   blue: car   gold outline: home', canvas.width / 2, canvas.height - 16);
   ctx.restore();
 }
 
@@ -1099,7 +1101,7 @@ function drawHUD() {
     items.push({ label: 'Paddleboard', sub: 'Paddling', active: true });
   } else if (player.onSurfboard) {
     const sub = player.ridingWave ? 'Riding in!'
-      : surfboardOnBigWave() ? 'CATCH IT! (X)'
+      : surfboardOnBigWave() ? 'CATCH IT!'
       : 'Paddling';
     items.push({ label: 'Surfboard', sub, active: true });
   } else if (player.swimming) {
@@ -1110,13 +1112,12 @@ function drawHUD() {
   }
   if (items.length === 0) return;
 
-  // right-aligned, tucked into the gap just below the RELOAD/SHOOT
-  // buttons and above the touch action row, instead of sitting over the
-  // d-pad or floating in the middle of the screen
+  // right-aligned under the cash + ammo readout, clear of the touch
+  // button cluster in the bottom-right corner
   const slotW = 62, slotH = 34, gap = 6;
   const totalW = items.length * slotW + (items.length - 1) * gap;
   let sx = canvas.width - 16 - totalW;
-  const sy = canvas.height - 116;
+  const sy = 84;
   items.forEach(item => {
     drawPanel(sx, sy, slotW, slotH,
       item.active ? 'rgba(255,210,127,0.3)' : 'rgba(30,30,30,0.65)',

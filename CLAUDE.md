@@ -23,7 +23,9 @@ All scripts share one global scope (top-level `const`/`let`/`function` are visib
 15. `draw-scenes.js` - `drawOutside`, `drawInterior`, furniture, dialogue UI, minimap, HUD, `draw`, `loop`
 16. `visuals.js` - presentation layer: world-anchored ground textures, ~25k scattered decor sprites + street furniture (built once at load, bucketed by 256px cells), building roof/wall/window/door detailing, pre-rendered tree sprites, cloud shadows, light-mapped night (`drawNightLighting`), interior shell/back wall/plants. Purely visual - no collision
 17. `iso.js` - isometric outdoor renderer (default; V toggles classic top-down, saved in localStorage). World logic stays 2D; ground draw functions run through a 2:1 iso canvas transform (canvas.width/height are temporarily overridden to the visible world bbox so their culling works), buildings are extruded boxes with the regular facade/roof art mapped onto each face, upright things are placed at `isoS(x, y)` and depth-sorted against building footprints. Cars/motorcycles are true 3D models built from shaded boxes (`drawIsoCar`, `drawIsoMotorcycle`, `isoVehBox`). Keys move along world axes (up = screen up-right). Camera zoom = auto-fit (min screen side / 530) × user factor (+/- keys, saved); the scene is drawn in logical px under ctx.scale(iso.Z), so use relative transforms only. Interiors are still top-down
-18. `main.js` - button bindings, save/load (`localStorage`), name/tier overlays, startup
+18. `main.js` - touch controls (floating left thumbstick read by `update()` via `joystick`, pinch zoom, contextual action buttons synced from `primaryActionLabel`/`interactLabel`/`vehicleActionLabel` in player.js), menu toggle, save/load (`localStorage`), name/tier overlays, startup
+
+Controls: desktop WASD + Shift sprint, E interact, F vehicle in/out, Space jump (bike) / catch (surf) / fire, click fire, G gun, R reload, M/Tab/N map, V view, +/- zoom, Esc menu.
 
 A new file goes into the `<script>` list in index.html at the right position.
 
