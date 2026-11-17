@@ -902,11 +902,16 @@ function drawMinimap() {
   const mh = canvas.height - pad * 2 - 20;
   const totalW = WORLD_W - WORLD_LEFT;
   const totalH = WORLD_H - WORLD_TOP;
-  const scale = Math.min(mw / totalW, mh / totalH);
-  const ox = pad + (mw - totalW * scale) / 2;
-  const oy = pad + 20 + (mh - totalH * scale) / 2;
+  // zoom/pan: mapView (player.js) holds the zoom and the world point at screen centre
+  mapView.fit = Math.min(mw / totalW, mh / totalH);
+  const scale = mapView.fit * mapView.zoom;
+  const ox = canvas.width / 2 - (mapView.cx - WORLD_LEFT) * scale;
+  const oy = canvas.height / 2 - (mapView.cy - WORLD_TOP) * scale;
   const wx = x => ox + (x - WORLD_LEFT) * scale;
   const wy = y => oy + (y - WORLD_TOP) * scale;
+  const onScreen = (x, y) => x > -80 && x < canvas.width + 80 && y > -20 && y < canvas.height + 20;
+  const lz = Math.min(1.7, 1 + (mapView.zoom - 1) * 0.12); // labels grow a little as you zoom in
+  const font = (px, bold) => `${bold ? 'bold ' : ''}${Math.round(px * lz)}px monospace`;
 
   ctx.save();
   ctx.fillStyle = 'rgba(8,12,10,0.94)';
@@ -971,9 +976,10 @@ function drawMinimap() {
   // being skipped or drawn on top of another name
   const placedLabels = [];
   function placeLabel(text, cx, cy, font, color) {
+    if (!onScreen(cx, cy)) return false;
     ctx.font = font;
     const tw = ctx.measureText(text).width;
-    const h = 9;
+    const h = parseInt(font.match(/(\d+)px/)[1], 10) + 1;
     let finalY = cy;
     let found = false;
     for (let attempt = 0; attempt < 30 && !found; attempt++) {
@@ -989,11 +995,19 @@ function drawMinimap() {
     return true;
   }
 
-  placeLabel('River', wx(WORLD_W / 2), wy(RIVER_Y + RIVER_H / 2) + 3, 'bold 9px monospace', 'rgba(220,240,255,0.85)');
-  placeLabel('Widow Creek', wx(WORLD_W / 2), wy(RIVER2_Y + RIVER2_H / 2) + 3, 'bold 9px monospace', 'rgba(220,240,255,0.85)');
-  placeLabel('Lake', wx(LAKE.x + LAKE.w / 2), wy(LAKE.y + LAKE.h / 2), 'bold 9px monospace', 'rgba(220,240,255,0.85)');
-  placeLabel('The Mountains', wx(WORLD_W / 2), wy(WORLD_TOP + (MOUNTAIN_Y - WORLD_TOP) / 2), 'bold 10px monospace', 'rgba(235,240,245,0.85)');
-  placeLabel('The Ocean', wx((OCEAN_X0 + OCEAN_X1) / 2), wy((OCEAN_Y0 + OCEAN_Y1) / 2), 'bold 10px monospace', 'rgba(220,240,255,0.85)');
+  // rivers / mountains get their label repeated so one is always in view when zoomed in
+  const along = (y, text, f, col) => { for (let x = 300; x < WORLD_W; x += 1600) placeLabel(text, wx(x), wy(y) + 3, f, col); };
+  along(RIVER_Y + RIVER_H / 2, 'River', font(9, true), 'rgba(220,240,255,0.85)');
+  along(RIVER2_Y + RIVER2_H / 2, 'Widow Creek', font(9, true), 'rgba(220,240,255,0.85)');
+  along(WORLD_TOP + (MOUNTAIN_Y - WORLD_TOP) / 2, 'The Mountains', font(10, true), 'rgba(235,240,245,0.85)');
+  placeLabel('Park', wx(PARK.x + PARK.w / 2), wy(PARK.y + PARK.h / 2), font(10, true), 'rgba(220,255,220,0.85)');
+  placeLabel('Lake', wx(LAKE.x + LAKE.w / 2), wy(LAKE.y + LAKE.h / 2), font(9, true), 'rgba(220,240,255,0.85)');
+  placeLabel('The Ocean', wx((OCEAN_X0 + OCEAN_X1) / 2), wy((OCEAN_Y0 + OCEAN_Y1) / 2), font(10, true), 'rgba(220,240,255,0.85)');
+  // street names once there's room to read them
+  if (mapView.zoom >= 2) {
+    NUMBERED_STREETS.forEach(st => { for (let x = 680; x < WORLD_W; x += 1080) placeLabel(st.name, wx(x), wy(st.y + ROAD_W / 2) + 4, font(9), 'rgba(255,255,255,0.6)'); });
+    NAMED_STREETS.forEach(st => { for (let y = 680; y < DOWNTOWN_H; y += 1080) placeLabel(st.name, wx(st.x + ROAD_W / 2), wy(y), font(9), 'rgba(255,255,255,0.6)'); });
+  }
 
   // home gets its own bright outline and bold label, placed first so it
   // always wins any overlap against a regular building name
@@ -1004,36 +1018,39 @@ function drawMinimap() {
     ctx.strokeStyle = '#ffd27f';
     ctx.lineWidth = 2;
     ctx.strokeRect(hx - 1.5, hy - 1.5, hw + 3, hh + 3);
-    placeLabel('HOME', hx + hw / 2, hy - 5, 'bold 10px monospace', '#ffd27f');
+    placeLabel('HOME', hx + hw / 2, hy - 5, font(10, true), '#ffd27f');
   }
 
   buildings.forEach(b => {
     if (b.name === 'Home') return;
     const cx = wx(b.x) + Math.max(1.5, b.w * scale) / 2;
-    placeLabel(b.name, cx, wy(b.y) - 3, '8px monospace', 'rgba(255,255,255,0.8)');
+    placeLabel(b.name, cx, wy(b.y) - 3, font(8), 'rgba(255,255,255,0.85)');
   });
 
   if (player.hasMotorcycle && motorcycleParked && !player.onMotorcycle) {
     drawMapMarker(wx(motorcycleParked.x), wy(motorcycleParked.y), '#ffcc33');
-    placeLabel('bike', wx(motorcycleParked.x), wy(motorcycleParked.y) - 10, 'bold 9px monospace', '#ffcc33');
+    placeLabel('bike', wx(motorcycleParked.x), wy(motorcycleParked.y) - 10, font(9, true), '#ffcc33');
   }
   if (player.hasCar && carParked && !player.onCar) {
     drawMapMarker(wx(carParked.x), wy(carParked.y), '#3ad6ff');
-    placeLabel('car', wx(carParked.x), wy(carParked.y) - 10, 'bold 9px monospace', '#3ad6ff');
+    placeLabel('car', wx(carParked.x), wy(carParked.y) - 10, font(9, true), '#3ad6ff');
   }
 
-  const onFoot = scene === 'outside';
-  const px = onFoot ? player.x : currentBuilding.x + currentBuilding.w / 2;
-  const py = onFoot ? player.y : currentBuilding.y;
-  drawMapMarker(wx(px), wy(py), '#ff3a3a', true);
+  const me = playerMapPos();
+  drawMapMarker(wx(me.x), wy(me.y), '#ff3a3a', true);
+  // pulsing ring so you can find yourself at any zoom
+  ctx.strokeStyle = 'rgba(255,58,58,0.7)'; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.arc(wx(me.x), wy(me.y), 11 + Math.sin(performance.now() / 250) * 3, 0, Math.PI * 2); ctx.stroke();
 
   ctx.font = 'bold 20px monospace';
   ctx.textAlign = 'center';
   ctx.fillStyle = '#fff';
   ctx.fillText('MAP', canvas.width / 2, 30);
-  ctx.font = '13px monospace';
+  ctx.font = '12px monospace';
   ctx.fillStyle = '#aaa';
-  ctx.fillText('[M] to close - red: you   yellow: bike   blue: car   gold outline: home', canvas.width / 2, canvas.height - 16);
+  const touch = document.body.classList.contains('touch');
+  ctx.fillText(touch ? 'drag to move · pinch to zoom · red: you  yellow: bike  blue: car'
+    : 'drag to move · scroll to zoom · [M] close · red: you  yellow: bike  blue: car  gold: home', canvas.width / 2, canvas.height - 16);
   ctx.restore();
 }
 

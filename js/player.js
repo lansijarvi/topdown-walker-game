@@ -395,9 +395,38 @@ function primaryActionLabel() {
   return null;
 }
 
+// map view: zoom 1 = whole world fits the screen; opens centred on you
+const mapView = { zoom: 3, cx: 0, cy: 0, fit: 1 };
+try { mapView.zoom = parseFloat(localStorage.getItem('topdownWalkerMapZoom')) || 3; } catch (e) {}
+function playerMapPos() {
+  if (scene === 'outside' || !currentBuilding) return { x: player.x + player.w / 2, y: player.y + player.h / 2 };
+  return { x: currentBuilding.x + currentBuilding.w / 2, y: currentBuilding.y + currentBuilding.h };
+}
+function mapCenterOnPlayer() { const p = playerMapPos(); mapView.cx = p.x; mapView.cy = p.y; }
+function mapClampView() {
+  mapView.zoom = Math.max(1, Math.min(10, mapView.zoom));
+  mapView.cx = Math.max(WORLD_LEFT, Math.min(WORLD_W, mapView.cx));
+  mapView.cy = Math.max(WORLD_TOP, Math.min(WORLD_H, mapView.cy));
+}
+// zoom by `factor`, keeping the world point under screen (sx, sy) fixed
+function mapZoomAt(sx, sy, factor) {
+  const s0 = mapView.fit * mapView.zoom;
+  const wxp = mapView.cx + (sx - canvas.width / 2) / s0, wyp = mapView.cy + (sy - canvas.height / 2) / s0;
+  mapView.zoom *= factor; mapClampView();
+  const s1 = mapView.fit * mapView.zoom;
+  mapView.cx = wxp - (sx - canvas.width / 2) / s1; mapView.cy = wyp - (sy - canvas.height / 2) / s1;
+  mapClampView();
+  try { localStorage.setItem('topdownWalkerMapZoom', String(mapView.zoom)); } catch (e) {}
+}
+function mapPanBy(dxScreen, dyScreen) {
+  const s = mapView.fit * mapView.zoom;
+  mapView.cx -= dxScreen / s; mapView.cy -= dyScreen / s; mapClampView();
+}
+
 function toggleMap() {
   if (dialogueOpen || awaitingName || awaitingTier) return;
   mapOpen = !mapOpen;
+  if (mapOpen) mapCenterOnPlayer();
 }
 
 // --- track editor: click empty ground to drop a ramp, drag an existing

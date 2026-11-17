@@ -251,6 +251,15 @@
   }
   #btnMenu { left: calc(10px + env(safe-area-inset-left)); }
   #btnMap { left: calc(62px + env(safe-area-inset-left)); font-size: 18px; }
+  /* map overlay buttons (touch + desktop) */
+  #mapControls { display: none; }
+  body.map-open #mapControls { display: block; }
+  #mapControls .tbtn { right: calc(16px + env(safe-area-inset-right)); width: 52px; height: 52px; font-size: 24px; border-radius: 12px; }
+  #mapZoomIn { top: 84px; }
+  #mapZoomOut { top: 144px; }
+  #mapCenter { top: 204px; }
+  #mapClose { top: 14px; background: rgba(160,40,40,0.75); font-size: 20px; }
+  body.map-open #joyBase, body.map-open #info { display: none; }
   /* touch: the help/settings panel lives behind the menu button */
   body.touch #info { top: 62px; display: none; }
   .touchHelp { display: none; }
@@ -303,6 +312,13 @@
   <button class="tbtn hidden" id="btnRide">Ride</button>
   <button class="tbtn hidden" id="btnReload">Reload</button>
   <button class="tbtn hidden" id="btnGun">Gun</button>
+</div>
+
+<div id="mapControls">
+  <button class="tbtn" id="mapZoomIn" aria-label="Zoom in">+</button>
+  <button class="tbtn" id="mapZoomOut" aria-label="Zoom out">−</button>
+  <button class="tbtn" id="mapCenter" aria-label="Center on me">◎</button>
+  <button class="tbtn" id="mapClose" aria-label="Close map">✕</button>
 </div>
 
 <div id="dialogueOptions"></div>

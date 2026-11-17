@@ -54,9 +54,61 @@ setInterval(syncTouchHud, 100);
 // desktop: left click fires when the gun is out (editors keep their clicks)
 canvas.addEventListener('pointerdown', e => {
   if (e.pointerType !== 'mouse' || e.button !== 0) return;
-  if (trackEditorOpen || furnitureEditorOpen || awaitingName || awaitingTier || dialogueOpen) return;
+  if (trackEditorOpen || furnitureEditorOpen || awaitingName || awaitingTier || dialogueOpen || mapOpen) return;
   if (player.hasGun && player.gunEquipped) shoot();
 });
+
+// ---------------------------------------------------------------------
+// Map: drag to pan (finger or mouse), pinch / scroll wheel to zoom, plus
+// + / - / centre / close buttons. Scroll wheel outside the map zooms the
+// game camera (same as +/- and pinch).
+// ---------------------------------------------------------------------
+const mapPts = new Map();
+let mapPinchD = 0;
+canvas.addEventListener('pointerdown', e => {
+  if (!mapOpen || (e.pointerType === 'mouse' && e.button !== 0)) return;
+  e.preventDefault();
+  mapPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  if (mapPts.size === 2) { const [a, b] = [...mapPts.values()]; mapPinchD = Math.hypot(a.x - b.x, a.y - b.y) || 1; }
+  try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+}, { passive: false });
+canvas.addEventListener('pointermove', e => {
+  if (!mapOpen || !mapPts.has(e.pointerId)) return;
+  e.preventDefault();
+  const prev = mapPts.get(e.pointerId);
+  if (mapPts.size === 1) {
+    mapPanBy(e.clientX - prev.x, e.clientY - prev.y);
+    mapPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  } else if (mapPts.size >= 2) {
+    const before = [...mapPts.values()].slice(0, 2);
+    const mx0 = (before[0].x + before[1].x) / 2, my0 = (before[0].y + before[1].y) / 2;
+    mapPts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const [a, b] = [...mapPts.values()];
+    const d = Math.hypot(a.x - b.x, a.y - b.y) || 1, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    mapPanBy(mx - mx0, my - my0);
+    mapZoomAt(mx, my, d / mapPinchD);
+    mapPinchD = d;
+  }
+}, { passive: false });
+const mapUp = e => { mapPts.delete(e.pointerId); if (mapPts.size === 2) { const [a, b] = [...mapPts.values()]; mapPinchD = Math.hypot(a.x - b.x, a.y - b.y) || 1; } };
+canvas.addEventListener('pointerup', mapUp);
+canvas.addEventListener('pointercancel', mapUp);
+
+canvas.addEventListener('wheel', e => {
+  if (awaitingName || awaitingTier) return;
+  if (mapOpen) {
+    e.preventDefault();
+    mapZoomAt(e.clientX, e.clientY, Math.exp(-e.deltaY * 0.0018));
+  } else if (!trackEditorOpen && !furnitureEditorOpen && scene === 'outside' && ISO_VIEW) {
+    e.preventDefault();
+    setIsoUserZoom(isoUserZoom * Math.exp(-e.deltaY * 0.0012), true);
+  }
+}, { passive: false });
+
+bindTouchBtn('mapZoomIn', () => mapZoomAt(canvas.width / 2, canvas.height / 2, 1.5));
+bindTouchBtn('mapZoomOut', () => mapZoomAt(canvas.width / 2, canvas.height / 2, 1 / 1.5));
+bindTouchBtn('mapCenter', mapCenterOnPlayer);
+bindTouchBtn('mapClose', () => { mapOpen = false; });
 
 // ---------------------------------------------------------------------
 // Touch: floating thumbstick on the left half of the screen + two-finger
@@ -95,7 +147,7 @@ function joyMove(x, y) {
   else { joystick.dx = vx / len; joystick.dy = vy / len; joystick.mag = len / JOY_R; joystick.run = len > JOY_R * 1.1; }
   joyRender();
 }
-const touchBlocked = () => awaitingName || awaitingTier || dialogueOpen || trackEditorOpen || furnitureEditorOpen;
+const touchBlocked = () => awaitingName || awaitingTier || dialogueOpen || trackEditorOpen || furnitureEditorOpen || mapOpen;
 const pinchDist = () => { const [a, b] = pinch.ids.map(id => touchPts.get(id)); return Math.hypot(a.x - b.x, a.y - b.y) || 1; };
 
 canvas.addEventListener('pointerdown', e => {
